@@ -161,3 +161,11 @@ temp/
 *.swp
 *.swo
 *~ 
+
+# Database files (local data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+rocksdb_data/
