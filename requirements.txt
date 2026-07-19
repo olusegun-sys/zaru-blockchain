@@ -1,7 +1,8 @@
 # ============================================
-# ZARU CORE DEPENDENCIES - FIXED
+# ZARU CORE DEPENDENCIES - COMPLETE
 # ============================================
-# Note: hashlib is built into Python - no pip install needed!
+# All dependencies for ZARU cryptocurrency node
+# Includes: blockchain, networking, wallet, API, and monitoring
 # ============================================
 
 # ============================================
@@ -18,16 +19,21 @@ python-multipart>=0.0.6       # Form data parsing for API
 # CRYPTOGRAPHY
 # ============================================
 
-ecdsa>=0.18.0                 # Elliptic Curve Digital Signature Algorithm
+ecdsa>=0.18.0                 # Elliptic Curve Digital Signature Algorithm (secp256k1)
 cryptography>=41.0.0          # AES encryption for wallet key storage
+# hashlib is built into Python - no pip install needed!
 
 # ============================================
 # DATABASE
 # ============================================
 
 # SQLite is built into Python - no installation needed
-# For production: python-rocksdb (Linux only)
-# python-rocksdb>=0.7.0      # Uncomment for Linux production
+
+# PostgreSQL for production (Render.com, Heroku, etc.)
+psycopg2-binary>=2.9.9        # PostgreSQL adapter for production
+
+# RocksDB for high-performance production (Linux only)
+# python-rocksdb>=0.7.0      # Uncomment for Linux production with RocksDB
 
 # ============================================
 # NETWORKING
@@ -67,3 +73,21 @@ pytest-cov>=4.1.0             # Code coverage reporting
 black>=23.11.0                # Code formatter
 mypy>=1.7.0                   # Static type checking
 ruff>=0.1.6                   # Fast Python linter
+
+# ============================================
+# INSTALLATION NOTES
+# ============================================
+# To install all dependencies:
+#   pip install -r requirements.txt
+#
+# For production on Linux with RocksDB:
+#   pip install -r requirements.txt python-rocksdb
+#
+# For development on Windows:
+#   pip install -r requirements.txt
+#   (SQLite will be used automatically)
+#
+# For Render.com deployment:
+#   pip install -r requirements.txt
+#   (DATABASE_URL will be used for PostgreSQL)
+# ============================================
