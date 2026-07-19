@@ -1,0 +1,163 @@
+﻿# ============================================
+# Python-specific ignores
+# ============================================
+
+# Bytecode and pycache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.dll
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============================================
+# ZARU-specific data (DO NOT COMMIT!)
+# ============================================
+
+# Blockchain data (large files)
+data/
+*.db
+*.ldb
+*.log
+*.sst
+*.blob
+
+# Wallets and private keys (SECURITY CRITICAL!)
+wallet.dat
+*.wallet
+*.key
+*.priv
+*.pem
+*.crt
+*.keychain
+
+# ============================================
+# Environment and secrets (NEVER COMMIT!)
+# ============================================
+
+.env
+.env.local
+.env.test
+.env.production
+*.env
+secrets/
+config/local/
+credentials.json
+service-account.json
+
+# ============================================
+# Logs
+# ============================================
+
+logs/
+*.log
+*.log.*
+npm-debug.log*
+
+# ============================================
+# IDE and editor files
+# ============================================
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+*.un~
+
+# ============================================
+# Operating system files
+# ============================================
+
+# Windows
+Desktop.ini
+$RECYCLE.BIN/
+Thumbs.db
+ehthumbs.db
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ============================================
+# Testing and coverage
+# ============================================
+
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+*.coverage
+coverage.xml
+
+# ============================================
+# Documentation
+# ============================================
+
+docs/_build/
+site/
+
+# ============================================
+# Docker
+# ============================================
+
+*.pid
+*.pid.lock
+
+# ============================================
+# Temporary files
+# ============================================
+
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.swo
+*~ 
