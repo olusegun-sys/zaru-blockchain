@@ -1,37 +1,29 @@
 # ============================================
 # ZARU PRODUCTION DEPENDENCIES
 # ============================================
-# Complete dependency list for ZARU cryptocurrency node
-# OPTIMIZED FOR RENDER.COM - Using pre-compiled wheels
+# Optimized for Python 3.12 (Render.com)
+# All packages with pre-compiled wheels
 # ============================================
 
 # ============================================
 # WEB FRAMEWORK & API
 # ============================================
-# Updated to versions with pre-compiled wheels
 fastapi==0.109.2               # REST API framework
-uvicorn[standard]==0.27.1      # ASGI server with pre-compiled wheels
-pydantic==2.7.4                # Data validation (pre-compiled wheels)
+uvicorn[standard]==0.27.1      # ASGI server
+pydantic==2.7.4                # Data validation (pre-compiled for 3.12)
 pydantic-settings==2.3.4       # Settings management
 python-multipart==0.0.9        # Form data parsing
 
 # ============================================
 # CRYPTOGRAPHY
 # ============================================
-# ECDSA - Pure Python, no compilation needed
 ecdsa==0.18.0                  # Digital signatures (pure Python)
-
-# Cryptography - Has pre-compiled wheels
-cryptography==42.0.5           # AES encryption (pre-compiled wheels)
-
-# NOTE: hashlib is built into Python - no pip install needed!
+cryptography==42.0.5           # AES encryption (pre-compiled)
 
 # ============================================
 # DATABASE
 # ============================================
-# SQLite is built into Python - no installation needed
-
-# psycopg2 - Binary version (no compilation)
+# SQLite is built into Python
 psycopg2-binary==2.9.9         # PostgreSQL adapter (binary)
 
 # ============================================
@@ -69,14 +61,8 @@ mypy==1.8.0                    # Static type checking
 ruff==0.3.0                    # Fast Python linter
 
 # ============================================
-# INSTALLATION NOTES
-# ============================================
-# For Render.com deployment:
-#   pip install -r requirements.txt
-#   All packages use pre-compiled wheels where possible
-#
-# For Windows development:
-#   pip install -r requirements.txt
-#   (SQLite will be used automatically)
-#
+# REQUIREMENTS FOR PYTHON 3.12:
+# - All packages have pre-compiled wheels
+# - No Rust/Cargo compilation needed
+# - Works on Render's read-only filesystem
 # ============================================
