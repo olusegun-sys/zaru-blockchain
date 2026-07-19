@@ -1,93 +1,130 @@
 # ============================================
-# ZARU CORE DEPENDENCIES - COMPLETE
+# ZARU PRODUCTION DEPENDENCIES
 # ============================================
-# All dependencies for ZARU cryptocurrency node
-# Includes: blockchain, networking, wallet, API, and monitoring
+# Complete dependency list for ZARU cryptocurrency node
+# Optimized for Render.com deployment (Linux)
 # ============================================
 
 # ============================================
 # WEB FRAMEWORK & API
 # ============================================
+# FastAPI - Modern REST API framework with auto-docs
+fastapi==0.104.1
 
-fastapi>=0.104.1              # REST API framework with automatic docs
-uvicorn[standard]>=0.24.0     # ASGI server for running FastAPI
-pydantic>=2.5.0               # Data validation and settings management
-pydantic-settings>=2.1.0      # Settings management with environment variables
-python-multipart>=0.0.6       # Form data parsing for API
+# Uvicorn - ASGI server with standard extras (WebSocket, HTTP/2)
+uvicorn[standard]==0.24.0
+
+# Pydantic - Data validation and settings management
+pydantic==2.5.0
+
+# Pydantic Settings - Environment variable management
+pydantic-settings==2.1.0
+
+# Python Multipart - Form data parsing for API
+python-multipart==0.0.6
 
 # ============================================
 # CRYPTOGRAPHY
 # ============================================
+# ECDSA - Elliptic Curve Digital Signature Algorithm (secp256k1)
+# Used for transaction signing and verification
+ecdsa==0.18.0
 
-ecdsa>=0.18.0                 # Elliptic Curve Digital Signature Algorithm (secp256k1)
-cryptography>=41.0.0          # AES encryption for wallet key storage
-# hashlib is built into Python - no pip install needed!
+# Cryptography - AES encryption for wallet key storage
+cryptography==41.0.7
+
+# NOTE: hashlib is built into Python - no pip install needed!
 
 # ============================================
 # DATABASE
 # ============================================
-
 # SQLite is built into Python - no installation needed
+# Used for development and Windows compatibility
 
-# PostgreSQL for production (Render.com, Heroku, etc.)
-psycopg2-binary>=2.9.9        # PostgreSQL adapter for production
+# psycopg2 - PostgreSQL adapter for production
+# Required for Render.com PostgreSQL database
+psycopg2-binary==2.9.9
 
-# RocksDB for high-performance production (Linux only)
-# python-rocksdb>=0.7.0      # Uncomment for Linux production with RocksDB
+# RocksDB - High-performance key-value store (Linux only)
+# Uncomment for production with RocksDB
+# python-rocksdb==0.7.0
 
 # ============================================
 # NETWORKING
 # ============================================
-
-websockets>=12.0              # WebSocket support for real-time updates
+# WebSockets - Real-time communication
+websockets==12.0
 
 # ============================================
 # SYSTEM & UTILITIES
 # ============================================
+# python-dotenv - Load environment variables from .env file
+python-dotenv==1.0.0
 
-python-dotenv>=1.0.0          # Load environment variables from .env file
-colorama>=0.4.6               # Colored terminal output for better UX
-click>=8.1.7                  # CLI framework for command-line interface
-schedule>=1.2.0               # Task scheduling for background jobs
-psutil>=5.9.6                 # System monitoring (CPU, memory, etc.)
+# Colorama - Colored terminal output for better UX
+colorama==0.4.6
+
+# Click - CLI framework for command-line interface
+click==8.1.7
+
+# Schedule - Task scheduling for background jobs
+schedule==1.2.0
+
+# Psutil - System monitoring (CPU, memory, etc.)
+psutil==5.9.6
 
 # ============================================
 # MONITORING & LOGGING
 # ============================================
+# Prometheus Client - Metrics for monitoring
+prometheus-client==0.19.0
 
-prometheus-client>=0.19.0     # Prometheus metrics for monitoring
-structlog>=24.1.0             # Structured logging for better debugging
+# Structlog - Structured logging for better debugging
+structlog==24.1.0
 
 # ============================================
 # TESTING
 # ============================================
+# Pytest - Testing framework
+pytest==7.4.3
 
-pytest>=7.4.3                 # Testing framework
-pytest-asyncio>=0.21.1        # Async testing support
-pytest-cov>=4.1.0             # Code coverage reporting
+# Pytest Asyncio - Async testing support
+pytest-asyncio==0.21.1
+
+# Pytest Cov - Code coverage reporting
+pytest-cov==4.1.0
 
 # ============================================
 # DEVELOPMENT
 # ============================================
+# Black - Code formatter
+black==23.11.0
 
-black>=23.11.0                # Code formatter
-mypy>=1.7.0                   # Static type checking
-ruff>=0.1.6                   # Fast Python linter
+# Mypy - Static type checking
+mypy==1.7.0
+
+# Ruff - Fast Python linter
+ruff==0.1.6
 
 # ============================================
 # INSTALLATION NOTES
 # ============================================
-# To install all dependencies:
+# For Render.com deployment:
 #   pip install -r requirements.txt
+#   (PostgreSQL will be used automatically via DATABASE_URL)
 #
-# For production on Linux with RocksDB:
-#   pip install -r requirements.txt python-rocksdb
-#
-# For development on Windows:
+# For Windows development:
 #   pip install -r requirements.txt
 #   (SQLite will be used automatically)
 #
-# For Render.com deployment:
-#   pip install -r requirements.txt
-#   (DATABASE_URL will be used for PostgreSQL)
+# For Linux production with RocksDB:
+#   pip install -r requirements.txt python-rocksdb
+# ============================================
+
+# ============================================
+# VERSION SUMMARY
+# ============================================
+# Python 3.10+ required
+# All packages tested with Python 3.10, 3.11, 3.12
+# Compatible with Render.com Ubuntu 22.04
 # ============================================

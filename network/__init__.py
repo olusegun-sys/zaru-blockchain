@@ -2,6 +2,9 @@
 ZARU Network Package
 ====================
 Peer-to-peer networking for block and transaction propagation.
+
+WHY: The network layer allows nodes to communicate.
+It propagates transactions, blocks, and maintains the network state.
 """
 
 from .protocol import Message, MessageType, serialize_message, deserialize_message

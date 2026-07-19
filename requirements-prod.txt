@@ -1,7 +1,8 @@
 # ============================================
-# ZARU PRODUCTION DEPENDENCIES (LINUX)
+# ZARU PRODUCTION DEPENDENCIES
 # ============================================
-# For deployment on Render or other Linux servers
+# Minimal dependencies for production deployment
+# Optimized for Render.com (Linux)
 # ============================================
 
 # Web Framework & API
@@ -15,8 +16,8 @@ python-multipart==0.0.6
 ecdsa==0.18.0
 cryptography==41.0.7
 
-# Database - RocksDB for production performance
-python-rocksdb==0.7.0
+# Database - PostgreSQL for production
+psycopg2-binary==2.9.9
 
 # Networking
 websockets==12.0
@@ -32,5 +33,6 @@ psutil==5.9.6
 prometheus-client==0.19.0
 structlog==24.1.0
 
-# Production Server
-gunicorn==21.2.0
+# ============================================
+# Install with: pip install -r requirements-prod.txt
+# ============================================

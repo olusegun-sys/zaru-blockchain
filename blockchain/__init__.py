@@ -2,6 +2,9 @@
 ZARU Blockchain Package
 =======================
 Core blockchain data structures and logic.
+
+WHY: This package contains the heart of ZARU - the blockchain.
+It handles transactions, blocks, UTXO management, and chain validation.
 """
 
 from .transaction import Transaction, TxInput, TxOutput
