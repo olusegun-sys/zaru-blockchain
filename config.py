@@ -3,6 +3,8 @@ ZARU Configuration Module
 ==========================
 Simple configuration using Python dataclasses + dotenv.
 NO pydantic_settings required - works with just pydantic.
+
+FIXED: Handles Render.com deployment with proper PORT parsing.
 """
 
 import os
@@ -15,6 +17,58 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ============================================
+# HELPER FUNCTIONS FOR PORT PARSING
+# ============================================
+
+def _parse_port(env_var: str, default: int) -> int:
+    """
+    Parse port from environment variable with safe fallback.
+    
+    WHY: Render.com sets PORT as an environment variable.
+    We need to handle cases where the value might be invalid.
+    """
+    value = os.getenv(env_var)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        # If the value is invalid, try to use the default
+        print(f"⚠️  Invalid port value '{value}' for {env_var}, using default {default}")
+        return default
+
+
+def _get_api_port() -> int:
+    """
+    Get API port with Render.com compatibility.
+    
+    WHY: Render.com sets PORT as an environment variable.
+    We need to use it if available, otherwise fall back to 8332.
+    """
+    # First, check if Render's PORT is set
+    render_port = os.getenv("PORT")
+    if render_port:
+        try:
+            port = int(render_port)
+            print(f"✅ Using Render PORT: {port}")
+            return port
+        except (ValueError, TypeError):
+            print(f"⚠️  Invalid Render PORT: {render_port}")
+    
+    # Then check our custom variable
+    return _parse_port("ZARU_API_PORT", 8332)
+
+
+def _get_node_port() -> int:
+    """
+    Get node port with Render.com compatibility.
+    
+    WHY: For P2P networking, we might need a different port.
+    """
+    return _parse_port("ZARU_NODE_PORT", 8333)
+
+
 class Settings(BaseModel):
     """
     Configuration settings for ZARU.
@@ -22,13 +76,13 @@ class Settings(BaseModel):
     """
     
     # ============================================
-    # NETWORK SETTINGS
+    # NETWORK SETTINGS - FIXED
     # ============================================
     
     NODE_HOST: str = os.getenv("ZARU_NODE_HOST", "0.0.0.0")
-    NODE_PORT: int = int(os.getenv("ZARU_NODE_PORT", "8333"))
-    API_HOST: str = os.getenv("ZARU_API_HOST", "127.0.0.1")
-    API_PORT: int = int(os.getenv("ZARU_API_PORT", "8332"))
+    NODE_PORT: int = _get_node_port()
+    API_HOST: str = os.getenv("ZARU_API_HOST", "0.0.0.0")
+    API_PORT: int = _get_api_port()
     
     # ============================================
     # BLOCKCHAIN SETTINGS
@@ -45,6 +99,8 @@ class Settings(BaseModel):
     # ============================================
     
     INITIAL_DIFFICULTY: int = 0x1d00ffff
+    MIN_TARGET: int = 0x00000000ffff0000000000000000000000000000000000000000000000000000
+    MAX_TARGET: int = 0x00000000ffff0000000000000000000000000000000000000000000000000000
     
     # ============================================
     # MEMPOOL SETTINGS
@@ -59,8 +115,6 @@ class Settings(BaseModel):
     
     DATA_DIR: Path = Path(os.getenv("ZARU_DATA_DIR", "./data"))
     DB_NAME: str = os.getenv("ZARU_DB_NAME", "zaru_ledger")
-    
-    # Database backend: 'sqlite' (dev) or 'rocksdb' (production)
     DB_BACKEND: str = os.getenv("ZARU_DB_BACKEND", "sqlite")
     
     # ============================================
@@ -106,7 +160,7 @@ class Settings(BaseModel):
     TESTNET_API_PORT: int = int(os.getenv("ZARU_TESTNET_API_PORT", "18332"))
     
     # ============================================
-    # PYDANTIC V2 CONFIG (FIXED - NO WARNINGS)
+    # PYDANTIC V2 CONFIG
     # ============================================
     
     model_config = {
@@ -154,11 +208,16 @@ def get_database_path() -> Path:
 
 def get_db_backend() -> str:
     """Get the configured database backend"""
-    # WHY: Automatically use SQLite on Windows to avoid compilation issues
+    # Check if PostgreSQL is available (production)
+    if os.getenv("DATABASE_URL"):
+        return "postgresql"
+    
+    # Windows: Use SQLite
     if os.name == "nt" and settings.DB_BACKEND == "rocksdb":
         print("⚠️  Windows detected: Falling back to SQLite backend")
         print("   (RocksDB requires Visual Studio Build Tools)")
         return "sqlite"
+    
     return settings.DB_BACKEND
 
 
@@ -181,6 +240,10 @@ def print_config_summary():
     if os.name == "nt":
         print(f"Operating System: Windows")
         print(f"Database: SQLite (auto-selected for Windows)")
+    
+    if os.getenv("RENDER"):
+        print(f"Platform: Render.com")
+        print(f"Render PORT: {os.getenv('PORT')}")
     
     print("=" * 50)
 
