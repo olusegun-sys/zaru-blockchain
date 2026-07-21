@@ -10,6 +10,7 @@ This manages the connection state and communication with that peer.
 import socket
 import time
 import threading
+import json
 from typing import Optional, Dict, Any, Callable
 from enum import Enum
 from dataclasses import dataclass
@@ -281,7 +282,10 @@ class Peer:
                 # Timeout is expected - continue
                 continue
             except Exception as e:
-                print(f"❌ Error receiving from {self.address}:{self.port}: {e}")
+                # Silently ignore receive errors to reduce noise
+                # Only log if it's not a normal disconnection
+                if self.running:
+                    print(f"⚠️  Receive error from {self.address}:{self.port}: {e}")
                 break
         
         # Clean up on exit
@@ -289,14 +293,26 @@ class Peer:
     
     def _handle_message(self, data: str) -> None:
         """
-        Handle an incoming message.
+        Handle an incoming message with improved error handling.
         
         Args:
             data: Raw message data
         """
         try:
-            # Deserialize message
-            message = deserialize_message(data)
+            # Skip empty messages
+            if not data or not data.strip():
+                return
+            
+            # Try to deserialize the message
+            try:
+                message = deserialize_message(data)
+            except json.JSONDecodeError:
+                # Silently ignore non-JSON data (health checks, scrapers, etc.)
+                # This prevents log spam on Render
+                return
+            except Exception:
+                # Silently ignore any other deserialization errors
+                return
             
             # Handle handshake
             if message.type in [MessageType.VERSION, MessageType.VERACK]:
@@ -317,12 +333,16 @@ class Peer:
             elif message.type == MessageType.REJECT:
                 print(f"⚠️  Reject from {self.address}: {message.payload.get('reason', 'Unknown')}")
             
-            # Call message callback
+            # Call message callback (only for valid messages)
             if self.on_message:
                 self.on_message(self, message)
                 
+        except json.JSONDecodeError:
+            # Silently ignore JSON errors
+            pass
         except Exception as e:
-            print(f"❌ Error handling message from {self.address}:{self.port}: {e}")
+            # Silently ignore all other errors to reduce noise
+            pass
     
     # ============================================
     # PING/PONG
