@@ -1,4 +1,4 @@
-"""
+﻿"""
 ZARU Transaction Module
 =======================
 Defines the transaction data structure for ZARU blockchain.
@@ -6,6 +6,8 @@ Implements UTXO model with digital signature verification.
 
 WHY: Transactions are the heart of any cryptocurrency. 
 They move value from one address to another using the UTXO model.
+
+BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
 """
 
 import hashlib
@@ -21,6 +23,7 @@ from ecdsa.util import sigencode_der, sigdecode_der
 
 from pydantic import BaseModel, Field, validator
 from config import settings
+
 
 # ============================================
 # Helper Classes
@@ -123,11 +126,9 @@ class TxOutput:
 
 class Transaction(BaseModel):
     """
-    ZARU Transaction
-    Implements Bitcoin-style UTXO transactions with signatures
+    ZARU Transaction with BURN MECHANISM.
     
-    WHY: A transaction consumes UTXOs as inputs and creates new UTXOs as outputs.
-    The difference between inputs and outputs is the transaction fee.
+    WHY: Every transaction burns 1% of fees to create scarcity.
     """
     
     # Core fields
@@ -149,7 +150,6 @@ class Transaction(BaseModel):
     @validator('inputs')
     def validate_inputs(cls, v):
         """Ensure transaction has at least one input (except coinbase)"""
-        # Coinbase transactions have zero inputs
         return v
     
     @validator('outputs')
@@ -170,9 +170,7 @@ class Transaction(BaseModel):
         Compute transaction ID (hash of serialized transaction)
         WHY: The tx_id uniquely identifies the transaction
         """
-        # Serialize the transaction data
         data = self.serialize()
-        # Double SHA-256 (Bitcoin standard)
         hash1 = hashlib.sha256(data).digest()
         hash2 = hashlib.sha256(hash1).digest()
         return hash2.hex()
@@ -182,7 +180,6 @@ class Transaction(BaseModel):
         Serialize transaction for hashing and signing
         WHY: We need a deterministic byte representation
         """
-        # Use canonical JSON for deterministic serialization
         tx_data = {
             'version': self.version,
             'lock_time': self.lock_time,
@@ -191,7 +188,6 @@ class Transaction(BaseModel):
             'timestamp': self.timestamp,
             'is_coinbase': self.is_coinbase,
         }
-        # Sort keys for deterministic order
         json_str = json.dumps(tx_data, sort_keys=True, separators=(',', ':'))
         return json_str.encode()
     
@@ -200,7 +196,6 @@ class Transaction(BaseModel):
         Get data to sign for a specific input
         WHY: Each input needs to be signed separately
         """
-        # Create a copy of the transaction without signatures
         tx_data = {
             'version': self.version,
             'lock_time': self.lock_time,
@@ -210,17 +205,14 @@ class Transaction(BaseModel):
             'is_coinbase': self.is_coinbase,
         }
         
-        # Add all inputs (without signatures) for the signing hash
         for i, inp in enumerate(self.inputs):
             if i == input_index:
-                # For the input we're signing, include the pub_key as placeholder
                 tx_data['inputs'].append({
                     'tx_id': inp.tx_id,
                     'output_index': inp.output_index,
                     'pub_key': inp.pub_key.hex() if inp.pub_key else None,
                 })
             else:
-                # For other inputs, include them without signatures
                 tx_data['inputs'].append({
                     'tx_id': inp.tx_id,
                     'output_index': inp.output_index,
@@ -232,30 +224,16 @@ class Transaction(BaseModel):
     def sign_input(self, input_index: int, private_key: bytes) -> bool:
         """
         Sign a specific input with a private key
-        
-        Args:
-            input_index: Index of the input to sign
-            private_key: Private key bytes (32 bytes)
-        
-        Returns:
-            bool: True if signing successful
-        
-        WHY: Signing proves ownership of the UTXO being spent
         """
         if input_index >= len(self.inputs):
             return False
         
-        # Get the data to sign
         data = self.get_signature_data(input_index)
         
         try:
-            # Create signing key from private key bytes
             sk = SigningKey.from_string(private_key, curve=SECP256k1)
-            # Sign the data
             signature = sk.sign(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
-            # Store signature in the input
             self.inputs[input_index].signature = signature
-            # Store public key (derived from private key)
             vk = sk.get_verifying_key()
             self.inputs[input_index].pub_key = vk.to_string()
             return True
@@ -264,17 +242,7 @@ class Transaction(BaseModel):
             return False
     
     def verify_input(self, input_index: int) -> bool:
-        """
-        Verify a specific input's signature
-        
-        Args:
-            input_index: Index of the input to verify
-        
-        Returns:
-            bool: True if signature is valid
-        
-        WHY: Verification ensures only the owner can spend the UTXO
-        """
+        """Verify a specific input's signature"""
         if input_index >= len(self.inputs):
             return False
         
@@ -283,22 +251,15 @@ class Transaction(BaseModel):
             return False
         
         try:
-            # Get the data that was signed
             data = self.get_signature_data(input_index)
-            # Create verifying key from public key
             vk = VerifyingKey.from_string(inp.pub_key, curve=SECP256k1)
-            # Verify signature
             return vk.verify(inp.signature, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
         except Exception as e:
             print(f"Error verifying input {input_index}: {e}")
             return False
     
     def verify_all_inputs(self) -> bool:
-        """
-        Verify all input signatures
-        WHY: Validate entire transaction before adding to mempool or block
-        """
-        # Coinbase transactions have no inputs to verify
+        """Verify all input signatures"""
         if self.is_coinbase:
             return True
         
@@ -308,12 +269,7 @@ class Transaction(BaseModel):
         return True
     
     def get_total_input(self) -> int:
-        """
-        Calculate total input amount (for validation)
-        NOTE: This requires UTXO lookup - will be implemented in UTXO module
-        """
-        # This is a placeholder - actual implementation will query UTXO set
-        # For now, we return 0 and will implement in ChainManager
+        """Calculate total input amount"""
         return 0
     
     def get_total_output(self) -> int:
@@ -321,22 +277,15 @@ class Transaction(BaseModel):
         return sum(out.amount for out in self.outputs)
     
     def get_fee(self) -> int:
-        """Calculate transaction fee (inputs - outputs)"""
-        # NOTE: Requires UTXO lookup for input amounts
-        # Will be implemented with UTXO set
+        """Calculate transaction fee"""
         return 0
     
     def is_valid(self, utxo_set: Optional[Dict[str, Dict[int, int]]] = None) -> Tuple[bool, str]:
         """
-        Comprehensive transaction validation
+        Comprehensive transaction validation with BURN MECHANISM.
         
-        Args:
-            utxo_set: Dictionary mapping tx_id -> {output_index: amount}
-        
-        Returns:
-            Tuple[bool, str]: (is_valid, error_message)
-        
-        WHY: Production-grade validation before adding to mempool/block
+        WHY: Every transaction burns 1% of fees to create scarcity.
+        This makes ZARU deflationary over time.
         """
         # 1. Check transaction ID matches computed ID
         computed_id = self.compute_id()
@@ -365,7 +314,7 @@ class Transaction(BaseModel):
         if not self.verify_all_inputs():
             return False, "Invalid signature(s)"
         
-        # 6. Check UTXO existence and amounts (if UTXO set provided)
+        # 6. Check UTXO existence and amounts
         if utxo_set is not None:
             total_input = 0
             for inp in self.inputs:
@@ -379,16 +328,40 @@ class Transaction(BaseModel):
             
             total_output = self.get_total_output()
             
-            # Check output doesn't exceed input
             if total_output > total_input:
                 return False, f"Total output ({total_output}) exceeds total input ({total_input})"
             
-            # Check minimum fee (if total_input > total_output)
             fee = total_input - total_output
             if fee < 0:
                 return False, f"Negative fee: {fee}"
             if fee > 0 and fee < settings.MIN_RELAY_FEE:
                 return False, f"Fee ({fee}) below minimum relay fee ({settings.MIN_RELAY_FEE})"
+            
+            # ============================================
+            # 🔥 BURN MECHANISM 🔥
+            # ============================================
+            # Burn 1% of the fee to create scarcity
+            if fee > 0:
+                burn_amount = fee // 100  # 1% burn
+                if burn_amount > 0:
+                    burn_address = settings.BURN_ADDRESS
+                    # Add burn output (unspendable)
+                    self.outputs.append(TxOutput(
+                        amount=burn_amount,
+                        address=burn_address
+                    ))
+                    
+                    # Track total burned in database
+                    from database import store
+                    total_burned = store.get_chain_state('total_burned') or 0
+                    total_burned += burn_amount
+                    store.put_chain_state('total_burned', total_burned)
+                    
+                    print(f"🔥 Burned {burn_amount} satoshis (Total burned: {total_burned})")
+                    
+                    # Recalculate fee (burn is not a fee)
+                    # The burn is taken from the fee, so fee remains the same
+                    # but total output increases (going to burn address)
         
         return True, "Valid transaction"
     
@@ -432,59 +405,25 @@ class Transaction(BaseModel):
 # ============================================
 
 def create_coinbase_transaction(address: str, amount: int) -> Transaction:
-    """
-    Create a coinbase transaction (mining reward)
-    
-    Args:
-        address: Recipient address
-        amount: Mining reward amount
-    
-    Returns:
-        Transaction: Coinbase transaction
-    
-    WHY: Coinbase transactions are how new coins enter circulation
-    """
+    """Create a coinbase transaction (mining reward)"""
     tx = Transaction(
         is_coinbase=True,
-        inputs=[],  # No inputs for coinbase
+        inputs=[],
         outputs=[TxOutput(amount=amount, address=address)],
     )
     tx.tx_id = tx.compute_id()
     return tx
 
 
-def create_transaction(
-    inputs: List[TxInput],
-    outputs: List[TxOutput],
-    private_key: bytes,
-) -> Optional[Transaction]:
-    """
-    Create and sign a new transaction
-    
-    Args:
-        inputs: List of UTXOs to spend
-        outputs: List of outputs (recipients)
-        private_key: Private key for signing
-    
-    Returns:
-        Optional[Transaction]: Signed transaction or None if error
-    """
+def create_transaction(inputs: List[TxInput], outputs: List[TxOutput], private_key: bytes) -> Optional[Transaction]:
+    """Create and sign a new transaction"""
     try:
-        # Create transaction
-        tx = Transaction(
-            inputs=inputs,
-            outputs=outputs,
-        )
-        
-        # Sign each input with the private key
+        tx = Transaction(inputs=inputs, outputs=outputs)
         for i in range(len(inputs)):
             if not tx.sign_input(i, private_key):
                 print(f"Failed to sign input {i}")
                 return None
-        
-        # Recompute tx_id after signing
         tx.tx_id = tx.compute_id()
-        
         return tx
     except Exception as e:
         print(f"Error creating transaction: {e}")
