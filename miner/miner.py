@@ -4,6 +4,7 @@ ZARU Miner Module
 Handles Proof of Work mining and block creation.
 
 ADDED: Easy mode for bot mining (reduced difficulty)
+FIXED: Coinbase transaction properly added to all mined blocks
 """
 
 import time
@@ -45,7 +46,7 @@ class Miner:
         utxo_set: Optional[UTXOSet] = None,
         store=None,
         address: Optional[str] = None,
-        easy_mode: bool = True  # NEW: Easy mode for bots
+        easy_mode: bool = True
     ):
         """
         Initialize the miner.
@@ -68,7 +69,7 @@ class Miner:
         self.hash_count = 0
         self.last_hash_rate_check = time.time()
         
-        # NEW: Easy mode
+        # Easy mode
         self.easy_mode = easy_mode
         if easy_mode:
             print("🎯 EASY MODE ENABLED - Mining difficulty reduced 10,000x")
@@ -111,22 +112,27 @@ class Miner:
     # ============================================
     
     def create_block_template(self) -> Optional[Block]:
-        """Create a candidate block for mining."""
+        """Create a candidate block for mining with coinbase."""
         if not self.address:
             print("❌ Mining address not set! Use set_mining_address()")
             return None
         
+        # Get transactions from mempool
         transactions = self.mempool.prepare_for_mining()
         
-        # Mining reward - 50 ZARU (50000000 satoshis)
-        reward = 50_000_000
+        # Create coinbase transaction (mining reward)
+        reward = 50_000_000  # 50 ZARU in satoshis
         coinbase = create_coinbase_transaction(self.address, reward)
+        
+        # Add coinbase as first transaction
         all_transactions = [coinbase] + transactions
         
+        # Get current chain state
         tip_hash = self.chain_manager.get_tip_hash()
         height = self.chain_manager.get_height()
         difficulty = self.chain_manager.get_difficulty()
         
+        # Create block
         block = Block()
         block.header = BlockHeader(
             version=1,
@@ -136,13 +142,23 @@ class Miner:
             block_height=height
         )
         
+        # Add all transactions (including coinbase)
         for tx in all_transactions:
             block.add_transaction(tx)
         
+        # Compute merkle root
         block.header.merkle_root = block.compute_merkle_root()
+        
+        # Compute block hash (without PoW)
         block.hash = block.compute_hash()
         block.size = block.compute_size()
         block.transaction_count = len(block.transactions)
+        
+        print(f"📦 Block template created:")
+        print(f"   Height: {height}")
+        print(f"   Transactions: {len(block.transactions)} (including coinbase)")
+        print(f"   Difficulty: {difficulty}")
+        print(f"   Reward: {reward} satoshis")
         
         return block
     
@@ -185,6 +201,7 @@ class Miner:
                 print(f"   Nonce: {attempts}")
                 print(f"   Block hash: {block_hash}")
                 print(f"   Hash rate: {self.stats.hash_rate:,.0f} H/s")
+                print(f"   Transactions: {len(block.transactions)}")
                 
                 return block
             
@@ -261,6 +278,7 @@ class Miner:
             print(f"   Block hash: {found_block.hash}")
             print(f"   Total hashes: {self.hash_count:,}")
             print(f"   Hash rate: {self.stats.hash_rate:,.0f} H/s")
+            print(f"   Transactions: {len(found_block.transactions)}")
             
             return found_block
         
@@ -387,24 +405,32 @@ class Miner:
     # ============================================
     
     def mine_test_block(self, difficulty: Optional[int] = None) -> Optional[Block]:
-        """Mine a test block with lower difficulty."""
+        """
+        Mine a test block with lower difficulty.
+        
+        FIXED: Ensures coinbase transaction is added to the block.
+        """
         if difficulty is None:
             difficulty = settings.EASY_DIFFICULTY
         
+        # Get transactions from mempool
         transactions = []
         try:
             transactions = self.mempool.get_transactions(10)
         except:
             pass
         
-        reward = 50_000_000
+        # Create coinbase transaction (mining reward)
+        reward = 50_000_000  # 50 ZARU
         coinbase = create_coinbase_transaction(
             self.address or "TEST_MINER_ADDRESS", 
             reward
         )
         
+        # Add coinbase as first transaction
         all_transactions = [coinbase] + transactions
         
+        # Create block
         block = Block()
         block.header = BlockHeader(
             version=1,
@@ -414,21 +440,28 @@ class Miner:
             block_height=self.chain_manager.get_height()
         )
         
+        # Add ALL transactions (including coinbase)
         for tx in all_transactions:
             block.add_transaction(tx)
         
+        # Update merkle root
         block.header.merkle_root = block.compute_merkle_root()
         block.hash = block.compute_hash()
         block.size = block.compute_size()
         block.transaction_count = len(block.transactions)
         
         print("🧪 Mining test block...")
+        print(f"   Coinbase reward: {reward} satoshis")
+        print(f"   Transactions: {len(block.transactions)} (including coinbase)")
+        
+        # Mine with multiple threads
         mined = self.mine_block_parallel(block, num_threads=4)
         
         if mined:
             print("✅ Test block mined!")
             print(f"   Hash: {mined.hash}")
             print(f"   Nonce: {mined.header.nonce}")
+            print(f"   Transactions: {len(mined.transactions)}")
         
         return mined
 
@@ -437,7 +470,14 @@ class Miner:
 # CONVENIENCE FUNCTIONS
 # ============================================
 
-def create_miner(chain_manager=None, mempool=None, utxo_set=None, store=None, address=None, easy_mode=True) -> Miner:
+def create_miner(
+    chain_manager: Optional[ChainManager] = None,
+    mempool: Optional[Mempool] = None,
+    utxo_set: Optional[UTXOSet] = None,
+    store=None,
+    address: Optional[str] = None,
+    easy_mode: bool = True
+) -> Miner:
     """Factory function to create a Miner."""
     return Miner(chain_manager, mempool, utxo_set, store, address, easy_mode)
 
