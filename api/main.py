@@ -9,8 +9,7 @@ WHY: The API provides REST endpoints for:
 - Mining control (start, stop, stats)
 - Network monitoring (peers, node info)
 
-THINK OF IT LIKE: A bank's API that allows apps to check balances,
-transfer money, and view transaction history.
+CORS: Configured to allow access from the wallet.
 """
 
 import sys
@@ -46,6 +45,8 @@ async def lifespan(app: FastAPI):
     print("🚀 Starting ZARU API...")
     print(f"   Environment: {'TESTNET' if settings.IS_TESTNET else 'MAINNET'}")
     print(f"   API Port: {settings.API_PORT}")
+    print(f"   CORS Enabled: {settings.ENABLE_CORS}")
+    print(f"   CORS Origins: {settings.ALLOWED_ORIGINS if settings.ENABLE_CORS else ['*']}")
     
     # Initialize services
     from blockchain.chain_manager import chain_manager
@@ -92,16 +93,32 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# ============================================
+# CORS MIDDLEWARE - FIXED
+# ============================================
+
+# Configure CORS based on settings
+if settings.ENABLE_CORS:
+    # Use specific allowed origins
+    origins = settings.ALLOWED_ORIGINS
+    print(f"🔒 CORS: Restricting to specific origins: {origins}")
+else:
+    # Allow all origins
+    origins = ["*"]
+    print(f"🌐 CORS: Allowing all origins (development mode)")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS if settings.ENABLE_CORS else ["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include router
+# ============================================
+# INCLUDE ROUTER
+# ============================================
+
 app.include_router(router)
 
 
@@ -117,6 +134,7 @@ async def root():
         "version": "1.0.0",
         "status": "running",
         "environment": "testnet" if settings.IS_TESTNET else "mainnet",
+        "cors_enabled": settings.ENABLE_CORS,
         "endpoints": {
             "wallet": "/wallet",
             "blockchain": "/blockchain",
@@ -157,4 +175,4 @@ if __name__ == "__main__":
         host=settings.API_HOST,
         port=settings.API_PORT,
         reload=True
-    )
+    )"# Force deploy" 
