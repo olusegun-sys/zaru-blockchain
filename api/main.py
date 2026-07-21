@@ -52,14 +52,20 @@ async def lifespan(app: FastAPI):
     from mempool import mempool
     from miner import miner
     from wallet import wallet
-    from network import node
+    from network import get_node
     
-    # Start network node (if configured)
-    try:
-        node.start()
-        print(f"✅ Network node started on port {settings.NODE_PORT}")
-    except Exception as e:
-        print(f"⚠️  Network node not started: {e}")
+    # Start network node ONLY if explicitly enabled
+    # Disabled by default on Render to avoid noise
+    if os.getenv("ZARU_NETWORK_ENABLED", "false").lower() == "true":
+        try:
+            node = get_node()
+            node.start()
+            print(f"✅ Network node started on port {settings.NODE_PORT}")
+        except Exception as e:
+            print(f"⚠️  Network node not started: {e}")
+    else:
+        print("ℹ️  Network node disabled (API-only mode)")
+        print("   To enable, set ZARU_NETWORK_ENABLED=true")
     
     print("✅ ZARU API ready!")
     
@@ -68,7 +74,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("🛑 Shutting down ZARU API...")
     try:
-        from network import node
+        from network import get_node
+        node = get_node()
         node.stop()
     except:
         pass
@@ -124,14 +131,18 @@ async def health():
     """Health check endpoint."""
     from blockchain.chain_manager import chain_manager
     from mempool import mempool
-    from network import node
+    from network import get_node
+    
+    node = get_node()
+    is_running = node.running if hasattr(node, 'running') else False
     
     return {
         "status": "healthy",
         "chain_height": chain_manager.get_height(),
         "mempool_size": mempool.get_mempool_size(),
-        "peer_count": node.get_peer_count(),
-        "is_mining": False,  # Will be updated from miner
+        "peer_count": node.get_peer_count() if hasattr(node, 'get_peer_count') else 0,
+        "is_mining": False,
+        "network_enabled": is_running
     }
 
 

@@ -23,7 +23,7 @@ from blockchain.utxo import utxo_set
 from mempool import mempool
 from miner import miner
 from wallet import wallet
-from network import node
+from network import get_node
 
 
 # ============================================
@@ -612,14 +612,17 @@ async def get_network_info() -> Dict[str, Any]:
         Dict: Network information
     """
     try:
+        node = get_node()
+        is_running = node.running if hasattr(node, 'running') else False
+        
         return {
             "node": {
                 "host": settings.NODE_HOST,
                 "port": settings.NODE_PORT,
-                "running": node.running
+                "running": is_running
             },
             "peers": {
-                "count": node.get_peer_count(),
+                "count": node.get_peer_count() if hasattr(node, 'get_peer_count') else 0,
                 "max": settings.MAX_PEERS
             },
             "bootstrap_peers": settings.BOOTSTRAP_NODES,
@@ -638,7 +641,8 @@ async def get_peers() -> Dict[str, Any]:
         Dict: List of peers
     """
     try:
-        peers = node.get_peers()
+        node = get_node()
+        peers = node.get_peers() if hasattr(node, 'get_peers') else []
         return {
             "peers": peers,
             "count": len(peers)
@@ -663,6 +667,7 @@ async def connect_peer(
         Dict: Connection result
     """
     try:
+        node = get_node()
         peer = node.connect_to_peer(address, port)
         if peer:
             return {
@@ -745,6 +750,7 @@ async def get_system_info() -> Dict[str, Any]:
     try:
         import platform
         import psutil
+        import time
         
         return {
             "python_version": platform.python_version(),
@@ -760,7 +766,7 @@ async def get_system_info() -> Dict[str, Any]:
                 "cores": psutil.cpu_count(),
                 "percent": psutil.cpu_percent(interval=1)
             },
-            "uptime": time.time() - psutil.boot_time()  # noqa: F821
+            "uptime": time.time() - psutil.boot_time()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

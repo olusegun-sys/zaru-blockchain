@@ -22,7 +22,7 @@ from typing import Optional, List, Dict, Any, Set, Callable
 from pathlib import Path
 
 from config import settings
-from network.protocol import (
+from .protocol import (
     Message, MessageType,
     create_version_message, create_verack_message,
     create_ping_message, create_get_blocks_message,
@@ -31,7 +31,7 @@ from network.protocol import (
     create_get_addr_message, create_inv_message,
     create_get_data_message
 )
-from network.peer import Peer, PeerStatus
+from .peer import Peer, PeerStatus
 
 
 class Node:
@@ -71,7 +71,7 @@ class Node:
         
         # Node identification
         self.nonce = random.randint(0, 2**32 - 1)
-        self.user_agent = f"ZARU-node/{time.time():.0f}"
+        self.user_agent = f"ZARU-node/{int(time.time())}"
         self.version = 1
         
         # Peers
@@ -379,7 +379,7 @@ class Node:
     
     def _handle_ping(self, peer: Peer, msg: Message) -> None:
         """Handle PING message."""
-        from network.protocol import create_pong_message
+        from .protocol import create_pong_message
         pong = create_pong_message(msg.payload.get('nonce', 0))
         peer.send_message(pong)
     
@@ -626,7 +626,7 @@ class Node:
         print("\n🧪 Testing Network...")
         
         # 1. Test message serialization
-        from network.protocol import create_version_message
+        from .protocol import create_version_message
         msg = create_version_message(1, 0, "test", "localhost", "localhost", 123)
         serialized = msg.to_json()
         deserialized = Message.from_json(serialized)
@@ -651,10 +651,22 @@ def peer_key(address: str, port: int) -> str:
 
 
 # ============================================
-# GLOBAL INSTANCE
+# Lazy Node Factory (No global instance)
 # ============================================
 
-node = Node()
+_node_instance = None
+
+def get_node() -> Node:
+    """
+    Get or create the global node instance lazily.
+    
+    WHY: The node should only be created when explicitly needed.
+    This prevents the P2P port from binding on Render by default.
+    """
+    global _node_instance
+    if _node_instance is None:
+        _node_instance = Node()
+    return _node_instance
 
 
 # ============================================
@@ -679,4 +691,4 @@ def test_node():
 
 if __name__ == "__main__":
     test_node()
-    test_protocol()
+    print("\n💡 To test protocol, run: python -m network.protocol")
