@@ -3,28 +3,18 @@ ZARU API Main Module
 ====================
 FastAPI application setup and configuration.
 
-WHY: The API provides REST endpoints for:
-- Wallet operations (balance, send, addresses)
-- Blockchain queries (blocks, transactions, chain info)
-- Mining control (start, stop, stats)
-- Network monitoring (peers, node info)
-
-CORS: Configured to allow access from the wallet.
+CORS: Explicitly configured to allow all origins.
 """
 
 import sys
 import os
-from pathlib import Path
-from typing import Optional
 from contextlib import asynccontextmanager
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from config import settings
 from api.routes import router
@@ -36,17 +26,11 @@ from api.routes import router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifecycle manager.
-    
-    WHY: Handles startup and shutdown of services.
-    """
+    """Application lifecycle manager."""
     # Startup
     print("🚀 Starting ZARU API...")
     print(f"   Environment: {'TESTNET' if settings.IS_TESTNET else 'MAINNET'}")
     print(f"   API Port: {settings.API_PORT}")
-    print(f"   CORS Enabled: {settings.ENABLE_CORS}")
-    print(f"   CORS Origins: {settings.ALLOWED_ORIGINS if settings.ENABLE_CORS else ['*']}")
     
     # Initialize services
     from blockchain.chain_manager import chain_manager
@@ -56,7 +40,6 @@ async def lifespan(app: FastAPI):
     from network import get_node
     
     # Start network node ONLY if explicitly enabled
-    # Disabled by default on Render to avoid noise
     if os.getenv("ZARU_NETWORK_ENABLED", "false").lower() == "true":
         try:
             node = get_node()
@@ -66,7 +49,6 @@ async def lifespan(app: FastAPI):
             print(f"⚠️  Network node not started: {e}")
     else:
         print("ℹ️  Network node disabled (API-only mode)")
-        print("   To enable, set ZARU_NETWORK_ENABLED=true")
     
     print("✅ ZARU API ready!")
     
@@ -94,26 +76,19 @@ app = FastAPI(
 )
 
 # ============================================
-# CORS MIDDLEWARE - FIXED
+# CORS MIDDLEWARE - EXPLICITLY ALLOW ALL
 # ============================================
-
-# Configure CORS based on settings
-if settings.ENABLE_CORS:
-    # Use specific allowed origins
-    origins = settings.ALLOWED_ORIGINS
-    print(f"🔒 CORS: Restricting to specific origins: {origins}")
-else:
-    # Allow all origins
-    origins = ["*"]
-    print(f"🌐 CORS: Allowing all origins (development mode)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print("🌐 CORS: Allowing all origins")
+
 
 # ============================================
 # INCLUDE ROUTER
@@ -134,7 +109,6 @@ async def root():
         "version": "1.0.0",
         "status": "running",
         "environment": "testnet" if settings.IS_TESTNET else "mainnet",
-        "cors_enabled": settings.ENABLE_CORS,
         "endpoints": {
             "wallet": "/wallet",
             "blockchain": "/blockchain",
