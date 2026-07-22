@@ -21,9 +21,10 @@ from blockchain.block import Block
 from blockchain.chain_manager import chain_manager
 from blockchain.utxo import utxo_set
 from mempool import mempool
-from miner import miner
+from miner import get_miner  # Changed: use factory function
 from wallet import wallet
 from network import get_node
+from config import settings
 
 
 # ============================================
@@ -465,7 +466,7 @@ async def get_transaction(tx_id: str) -> Dict[str, Any]:
 
 
 # ============================================
-# MINING ENDPOINTS
+# MINING ENDPOINTS - FIXED with get_miner()
 # ============================================
 
 @router.post("/mining/start")
@@ -484,6 +485,9 @@ async def start_mining(
         Dict: Mining status
     """
     try:
+        # Get a fresh miner instance with the coinbase fix
+        miner = get_miner()
+        
         if address:
             miner.set_mining_address(address)
         
@@ -516,6 +520,9 @@ async def stop_mining() -> Dict[str, Any]:
         Dict: Mining status
     """
     try:
+        # Get a fresh miner instance
+        miner = get_miner()
+        
         if not miner.is_mining:
             return {"message": "Mining not running", "is_mining": False}
         
@@ -537,6 +544,8 @@ async def get_mining_status() -> Dict[str, Any]:
         Dict: Mining status
     """
     try:
+        # Get a fresh miner instance
+        miner = get_miner()
         stats = miner.get_stats()
         return {
             "is_mining": stats.get('is_mining', False),
@@ -567,13 +576,16 @@ async def mine_single_block(
         Dict: Mining result
     """
     try:
+        # Get a fresh miner instance with the coinbase fix
+        miner = get_miner()
+        
         if address:
             miner.set_mining_address(address)
         
         if not miner.address:
             raise HTTPException(status_code=400, detail="Mining address not set")
         
-        # Mine a block (with lower difficulty for testing)
+        # Mine a test block (with lower difficulty)
         block = miner.mine_test_block()
         
         if block:
