@@ -5,6 +5,7 @@ Simple configuration using Python dataclasses + dotenv.
 
 FIXED: Handles Render.com deployment with proper PORT parsing.
 FIXED: CORS configuration to allow wallet access.
+FIXED: Added MAX_COINBASE_REWARD for proper coinbase validation.
 """
 
 import os
@@ -88,6 +89,10 @@ class Settings(BaseModel):
     AUTO_DIFFICULTY: bool = True
     TARGET_BLOCK_TIME: int = 60
     
+    # FIXED: MAX_COINBASE_REWARD - 50 ZARU in satoshis
+    # This is the maximum block reward, not the total supply
+    MAX_COINBASE_REWARD: int = 5_000_000_000  # 50 ZARU in satoshis
+    
     # ============================================
     # MEMPOOL SETTINGS
     # ============================================
@@ -130,7 +135,6 @@ class Settings(BaseModel):
     ENABLE_CORS: bool = os.getenv("ZARU_ENABLE_CORS", "false").lower() == "true"
     
     # Allowed origins for CORS (only used if ENABLE_CORS is True)
-    # Default includes localhost and Render URLs
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -236,6 +240,7 @@ def print_config_summary():
     print(f"Log Level: {settings.LOG_LEVEL}")
     print(f"CORS Enabled: {settings.ENABLE_CORS}")
     print(f"CORS Origins: {settings.ALLOWED_ORIGINS if settings.ENABLE_CORS else ['*']}")
+    print(f"MAX_COINBASE_REWARD: {settings.MAX_COINBASE_REWARD} satoshis ({settings.MAX_COINBASE_REWARD / 100_000_000} ZARU)")
     
     if os.getenv("RENDER"):
         print(f"Platform: Render.com")

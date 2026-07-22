@@ -5,6 +5,7 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
+FIXED: Coinbase validation uses MAX_COINBASE_REWARD instead of INITIAL_COIN_SUPPLY.
 """
 
 import hashlib
@@ -22,6 +23,10 @@ from config import settings
 
 @dataclass
 class TxInput:
+    """
+    Transaction Input
+    References a previous transaction output (UTXO)
+    """
     tx_id: str
     output_index: int
     signature: Optional[bytes] = None
@@ -56,6 +61,10 @@ class TxInput:
 
 @dataclass
 class TxOutput:
+    """
+    Transaction Output
+    Contains the amount and the recipient's address
+    """
     amount: int
     address: str
     
@@ -86,6 +95,10 @@ class TxOutput:
 
 
 class Transaction(BaseModel):
+    """
+    ZARU Transaction with BURN MECHANISM.
+    """
+    
     tx_id: str = ""
     version: int = 1
     lock_time: int = 0
@@ -198,6 +211,11 @@ class Transaction(BaseModel):
         return 0
     
     def is_valid(self, utxo_set: Optional[Dict[str, Dict[int, int]]] = None) -> Tuple[bool, str]:
+        """
+        Comprehensive transaction validation with BURN MECHANISM.
+        
+        FIXED: Coinbase validation uses MAX_COINBASE_REWARD from settings.
+        """
         # 1. Check transaction ID matches computed ID
         computed_id = self.compute_id()
         if self.tx_id != computed_id:
@@ -210,7 +228,8 @@ class Transaction(BaseModel):
             if len(self.outputs) != 1:
                 return False, "Coinbase transaction must have exactly one output"
             # FIXED: Check against MAX_COINBASE_REWARD, not total supply
-            MAX_COINBASE_REWARD = 5_000_000_000  # 50 ZARU in satoshis
+            # 50 ZARU = 5,000,000,000 satoshis (max block reward)
+            MAX_COINBASE_REWARD = getattr(settings, 'MAX_COINBASE_REWARD', 5_000_000_000)
             if self.outputs[0].amount > MAX_COINBASE_REWARD:
                 return False, f"Coinbase amount ({self.outputs[0].amount}) exceeds max reward ({MAX_COINBASE_REWARD})"
             return True, "Valid coinbase transaction"
@@ -250,9 +269,12 @@ class Transaction(BaseModel):
             if fee > 0 and fee < settings.MIN_RELAY_FEE:
                 return False, f"Fee ({fee}) below minimum relay fee ({settings.MIN_RELAY_FEE})"
             
-            # Burn mechanism
+            # ============================================
+            # 🔥 BURN MECHANISM 🔥
+            # ============================================
+            # Burn 1% of the fee to create scarcity
             if fee > 0:
-                burn_amount = fee // 100
+                burn_amount = fee // 100  # 1% burn
                 if burn_amount > 0:
                     burn_address = settings.BURN_ADDRESS
                     self.outputs.append(TxOutput(
@@ -260,6 +282,7 @@ class Transaction(BaseModel):
                         address=burn_address
                     ))
                     
+                    # Track total burned in database
                     from database import store
                     total_burned = store.get_chain_state('total_burned') or 0
                     total_burned += burn_amount
@@ -300,6 +323,7 @@ class Transaction(BaseModel):
 
 
 def create_coinbase_transaction(address: str, amount: int) -> Transaction:
+    """Create a coinbase transaction (mining reward)"""
     tx = Transaction(
         is_coinbase=True,
         inputs=[],
@@ -310,6 +334,7 @@ def create_coinbase_transaction(address: str, amount: int) -> Transaction:
 
 
 def create_transaction(inputs: List[TxInput], outputs: List[TxOutput], private_key: bytes) -> Optional[Transaction]:
+    """Create and sign a new transaction"""
     try:
         tx = Transaction(inputs=inputs, outputs=outputs)
         for i in range(len(inputs)):
