@@ -492,4 +492,4 @@ miner = Miner(easy_mode=True)
 if __name__ == "__main__":
     print("Miner module loaded")
     print(f"Easy mode: {miner.easy_mode}")
-    print(f"Difficulty: {miner.chain_manager.get_difficulty()}")
+    print(f"Difficulty: {miner.chain_manager.get_difficulty()}")"# FORCE REBUILD - $(date)" 
