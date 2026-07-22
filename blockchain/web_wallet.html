@@ -1,0 +1,791 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZARU Wallet</title>
+    <style>
+        /* ============================================
+           ZARU WALLET STYLES
+           ============================================ */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #0a0e1a 0%, #1a1f35 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #e0e0e0;
+        }
+
+        .wallet-container {
+            background: rgba(26, 31, 53, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            border: 1px solid rgba(100, 200, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+
+        .wallet-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .wallet-header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 2px;
+        }
+
+        .wallet-header h1 span {
+            color: #4fc3f7;
+        }
+
+        .wallet-header p {
+            color: #888;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .status-badge.online {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+
+        .status-badge.offline {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            border: 1px solid rgba(244, 67, 54, 0.3);
+        }
+
+        .status-badge.loading {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+
+        .address-section {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .address-label {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .address-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            word-break: break-all;
+        }
+
+        .address-display code {
+            font-size: 14px;
+            color: #4fc3f7;
+            background: rgba(79, 195, 247, 0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            flex: 1;
+            font-family: 'Courier New', monospace;
+        }
+
+        .address-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .address-actions button {
+            background: rgba(79, 195, 247, 0.15);
+            border: none;
+            color: #4fc3f7;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+
+        .address-actions button:hover {
+            background: rgba(79, 195, 247, 0.25);
+        }
+
+        .balance-section {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(79, 195, 247, 0.1), rgba(156, 39, 176, 0.1));
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(79, 195, 247, 0.1);
+        }
+
+        .balance-amount {
+            font-size: 48px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .balance-amount span {
+            font-size: 24px;
+            color: #4fc3f7;
+            margin-left: 5px;
+        }
+
+        .balance-label {
+            font-size: 14px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        .balance-details {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .balance-details span {
+            color: #e0e0e0;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4fc3f7, #2196f3);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(79, 195, 247, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #66bb6a, #43a047);
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+        }
+
+        .send-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .send-section h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.3);
+            color: #e0e0e0;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4fc3f7;
+        }
+
+        .form-group input::placeholder {
+            color: #555;
+        }
+
+        .history-section {
+            margin-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 20px;
+        }
+
+        .history-section h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #e0e0e0;
+        }
+
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .transaction-item .tx-type.sent {
+            color: #ef5350;
+        }
+
+        .transaction-item .tx-type.received {
+            color: #66bb6a;
+        }
+
+        .transaction-item .tx-id {
+            color: #888;
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        .no-transactions {
+            color: #555;
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+        }
+
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: #4fc3f7;
+            animation: spin 0.8s ease infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 2000;
+            display: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 90%;
+        }
+
+        .toast.show {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        .toast.success {
+            border-color: #4caf50;
+        }
+
+        .toast.error {
+            border-color: #f44336;
+        }
+
+        .toast.info {
+            border-color: #4fc3f7;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        /* Error Banner */
+        .error-banner {
+            background: rgba(244, 67, 54, 0.15);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 15px;
+            color: #ef5350;
+            font-size: 13px;
+            display: none;
+        }
+
+        .error-banner.show {
+            display: block;
+        }
+
+        .error-banner code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .wallet-container {
+                padding: 20px;
+            }
+
+            .balance-amount {
+                font-size: 32px;
+            }
+
+            .address-display code {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Main Wallet -->
+    <div class="wallet-container">
+        <!-- Header -->
+        <div class="wallet-header">
+            <h1>ZARU <span>Wallet</span></h1>
+            <p>Digital money for the real world</p>
+            <div class="status-badge loading" id="statusBadge">● Connecting...</div>
+        </div>
+
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner">
+            ⚠️ <span id="errorText">Connection error</span>
+        </div>
+
+        <!-- Address Section -->
+        <div class="address-section">
+            <div class="address-label">Your Address</div>
+            <div class="address-display">
+                <code id="addressDisplay">Loading...</code>
+                <div class="address-actions">
+                    <button onclick="copyAddress()" title="Copy address">📋</button>
+                    <button onclick="createNewAddress()" title="New address">➕</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Balance Section -->
+        <div class="balance-section">
+            <div class="balance-amount" id="balanceDisplay">0 <span>ZARU</span></div>
+            <div class="balance-label">Available Balance</div>
+            <div class="balance-details">
+                <span>Pending: <strong id="pendingBalance">0</strong></span>
+                <span>Total: <strong id="totalBalance">0</strong></span>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <button class="btn btn-primary" onclick="refreshWallet()" id="refreshBtn">
+            🔄 Refresh Wallet
+        </button>
+
+        <!-- Send Section -->
+        <div class="send-section">
+            <h3>💸 Send ZARU</h3>
+            <div class="form-group">
+                <label>Recipient Address</label>
+                <input type="text" id="sendTo" placeholder="Enter recipient address..." />
+            </div>
+            <div class="form-group">
+                <label>Amount (ZARU)</label>
+                <input type="number" id="sendAmount" placeholder="0.00" step="0.00000001" min="0" />
+            </div>
+            <button class="btn btn-success" onclick="sendTransaction()" id="sendBtn">
+                Send ZARU
+            </button>
+        </div>
+
+        <!-- Transaction History -->
+        <div class="history-section">
+            <h3>📜 Transaction History</h3>
+            <div id="transactionHistory">
+                <div class="no-transactions">No transactions yet</div>
+            </div>
+        </div>
+
+        <!-- Debug Info -->
+        <div style="margin-top: 20px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; font-size: 11px; color: #555; word-break: break-all;">
+            <div>API: <span id="debugApiUrl">https://zaru-api.onrender.com</span></div>
+            <div>Status: <span id="debugStatus">Loading...</span></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // ZARU WALLET - JavaScript (Fixed)
+        // ============================================
+
+        // Configuration
+        const API_BASE = 'https://zaru-api.onrender.com';
+
+        // State
+        let currentAddress = '';
+        let addresses = [];
+        let balance = 0;
+        let pendingBalance = 0;
+        let transactions = [];
+
+        // ============================================
+        // API HELPERS
+        // ============================================
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const url = `${API_BASE}${endpoint}`;
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            };
+
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            const response = await fetch(url, options);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
+        // ============================================
+        // WALLET FUNCTIONS
+        // ============================================
+
+        async function loadWallet() {
+            updateStatus('loading', 'Connecting...');
+            showError(false);
+
+            try {
+                // Test API connection
+                await apiCall('/health');
+                updateStatus('online', '● Online');
+
+                // 1. Get all addresses
+                const addrData = await apiCall('/wallet/addresses');
+                addresses = addrData.addresses || [];
+
+                if (addresses.length === 0) {
+                    // Create first address
+                    await createNewAddress();
+                    return;
+                }
+
+                // 2. Set current address (first one)
+                currentAddress = addresses[0];
+                document.getElementById('addressDisplay').textContent = currentAddress;
+
+                // 3. Get balance
+                await refreshBalance();
+
+                // 4. Get transactions
+                await refreshTransactions();
+
+                // 5. Update UI
+                updateUI();
+
+                document.getElementById('debugStatus').textContent = '✅ Connected';
+                document.getElementById('debugStatus').style.color = '#4caf50';
+
+            } catch (error) {
+                console.error('Load wallet error:', error);
+                document.getElementById('debugStatus').textContent = '❌ ' + error.message;
+                document.getElementById('debugStatus').style.color = '#f44336';
+                updateStatus('offline', '● Offline');
+                showError(true, error.message);
+            }
+        }
+
+        async function refreshWallet() {
+            await loadWallet();
+            showToast('Wallet refreshed!', 'success');
+        }
+
+        async function refreshBalance() {
+            if (!currentAddress) return;
+
+            try {
+                const data = await apiCall(`/wallet/balance/${currentAddress}`);
+                balance = data.confirmed || 0;
+                pendingBalance = data.pending || 0;
+                updateBalanceDisplay();
+            } catch (error) {
+                console.error('Balance error:', error);
+                throw error;
+            }
+        }
+
+        async function refreshTransactions() {
+            if (!currentAddress) return;
+
+            try {
+                const data = await apiCall(`/wallet/transactions/${currentAddress}?limit=20`);
+                transactions = data.transactions || [];
+                renderTransactions();
+            } catch (error) {
+                console.error('Transactions error:', error);
+                // If endpoint not available, show placeholder
+                transactions = [];
+                renderTransactions();
+            }
+        }
+
+        async function createNewAddress() {
+            try {
+                const label = `Wallet ${addresses.length + 1}`;
+                const data = await apiCall('/wallet/address', 'POST', { label });
+
+                if (data.address) {
+                    addresses.push(data.address);
+                    currentAddress = data.address;
+                    document.getElementById('addressDisplay').textContent = currentAddress;
+                    await refreshBalance();
+                    await refreshTransactions();
+                    updateUI();
+                    showToast(`New address created!`, 'success');
+                }
+            } catch (error) {
+                console.error('Create address error:', error);
+                showToast('Failed to create address: ' + error.message, 'error');
+                throw error;
+            }
+        }
+
+        async function sendTransaction() {
+            const toAddress = document.getElementById('sendTo').value.trim();
+            const amountInput = document.getElementById('sendAmount').value;
+
+            if (!toAddress) {
+                showToast('Please enter a recipient address', 'error');
+                return;
+            }
+
+            if (!amountInput || parseFloat(amountInput) <= 0) {
+                showToast('Please enter a valid amount', 'error');
+                return;
+            }
+
+            const amountInZARU = parseFloat(amountInput);
+            const amountInSatoshis = Math.floor(amountInZARU * 100000000);
+
+            if (amountInSatoshis > balance) {
+                showToast('Insufficient balance', 'error');
+                return;
+            }
+
+            try {
+                const data = await apiCall('/wallet/send', 'POST', {
+                    to_address: toAddress,
+                    amount: amountInSatoshis,
+                    from_address: currentAddress,
+                    fee: 0,
+                    memo: 'Web wallet transaction'
+                });
+
+                if (data.success) {
+                    showToast(`✅ Sent ${amountInZARU} ZARU!`, 'success');
+                    document.getElementById('sendTo').value = '';
+                    document.getElementById('sendAmount').value = '';
+                    await refreshBalance();
+                    await refreshTransactions();
+                    updateUI();
+                } else {
+                    showToast('Transaction failed: ' + data.message, 'error');
+                }
+            } catch (error) {
+                console.error('Send error:', error);
+                showToast('Failed to send: ' + error.message, 'error');
+            }
+        }
+
+        // ============================================
+        // UI UPDATES
+        // ============================================
+
+        function updateUI() {
+            updateBalanceDisplay();
+            renderTransactions();
+        }
+
+        function updateBalanceDisplay() {
+            const balanceInZARU = (balance / 100000000).toFixed(8);
+            const pendingInZARU = (pendingBalance / 100000000).toFixed(8);
+            const totalInZARU = ((balance + pendingBalance) / 100000000).toFixed(8);
+
+            document.getElementById('balanceDisplay').innerHTML = `${balanceInZARU} <span>ZARU</span>`;
+            document.getElementById('pendingBalance').textContent = pendingInZARU;
+            document.getElementById('totalBalance').textContent = totalInZARU;
+        }
+
+        function renderTransactions() {
+            const container = document.getElementById('transactionHistory');
+
+            if (!transactions || transactions.length === 0) {
+                container.innerHTML = '<div class="no-transactions">No transactions yet</div>';
+                return;
+            }
+
+            let html = '';
+            transactions.slice(0, 10).forEach(tx => {
+                const amount = (tx.amount || 0) / 100000000;
+                const typeClass = tx.type === 'sent' ? 'sent' : 'received';
+                const typeLabel = tx.type === 'sent' ? '⬆ Sent' : '⬇ Received';
+
+                html += `
+                    <div class="transaction-item">
+                        <div>
+                            <div class="tx-type ${typeClass}">${typeLabel}</div>
+                            <div class="tx-id">${tx.tx_id ? tx.tx_id.slice(0, 16) + '...' : 'Unknown'}</div>
+                        </div>
+                        <div class="tx-type ${typeClass}">${amount.toFixed(8)} ZARU</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function updateStatus(status, text) {
+            const badge = document.getElementById('statusBadge');
+            badge.textContent = text;
+            badge.className = 'status-badge ' + status;
+        }
+
+        function showError(show, message = '') {
+            const banner = document.getElementById('errorBanner');
+            const text = document.getElementById('errorText');
+            if (show) {
+                banner.classList.add('show');
+                text.textContent = message;
+            } else {
+                banner.classList.remove('show');
+            }
+        }
+
+        // ============================================
+        // UTILITY FUNCTIONS
+        // ============================================
+
+        function copyAddress() {
+            if (!currentAddress) {
+                showToast('No address to copy', 'error');
+                return;
+            }
+
+            navigator.clipboard.writeText(currentAddress).then(() => {
+                showToast('Address copied!', 'success');
+            }).catch(() => {
+                // Fallback
+                const input = document.createElement('input');
+                input.value = currentAddress;
+                document.body.appendChild(input);
+                input.select();
+                document.execCommand('copy');
+                document.body.removeChild(input);
+                showToast('Address copied!', 'success');
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast show ' + type;
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+
+        // ============================================
+        // INITIALIZE
+        // ============================================
+
+        // Debug info
+        document.getElementById('debugApiUrl').textContent = API_BASE;
+
+        // Load wallet on startup
+        document.addEventListener('DOMContentLoaded', () => {
+            loadWallet();
+        });
+
+        console.log('🔐 ZARU Wallet loaded');
+        console.log(`📡 API: ${API_BASE}`);
+        console.log('💡 Open this file with a local server: python -m http.server 8000');
+    </script>
+
+</body>
+</html>

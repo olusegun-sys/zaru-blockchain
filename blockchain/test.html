@@ -1,0 +1,24 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>ZARU Test</title>
+</head>
+<body>
+    <h1>✅ ZARU Wallet is Working!</h1>
+    <p>If you can see this, the static site is serving files correctly.</p>
+    <p>API Status: <span id="status">Checking...</span></p>
+    
+    <script>
+        fetch('https://zaru-api.onrender.com/health')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('status').textContent = '✅ Connected: ' + data.status;
+                document.getElementById('status').style.color = 'green';
+            })
+            .catch(err => {
+                document.getElementById('status').textContent = '❌ Error: ' + err.message;
+                document.getElementById('status').style.color = 'red';
+            });
+    </script>
+</body>
+</html>

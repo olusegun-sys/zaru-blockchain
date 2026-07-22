@@ -4,316 +4,107 @@
     <meta charset="UTF-8">
     <title>ZARU Wallet</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* ─── RESET ─── */
+        *{margin:0;padding:0;box-sizing:border-box}
+
+        body{font-family:Arial,sans-serif;background:#0a0e1a;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px;color:#fff}
+
+        .container{background:#1a1f35;border-radius:20px;padding:30px;max-width:500px;width:100%;border:1px solid rgba(100,200,255,0.1)}
+
+        h1{text-align:center;font-size:28px;margin-bottom:20px;color:#fff}
+        h1 span{color:#4fc3f7}
+
+        /* ─── Status Badge ─── */
+        .status-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;margin-top:6px}
+        .status-badge.online{background:rgba(76,175,80,0.2);color:#4caf50;border:1px solid rgba(76,175,80,0.3)}
+        .status-badge.offline{background:rgba(244,67,54,0.2);color:#f44336;border:1px solid rgba(244,67,54,0.3)}
+        .status-badge.loading{background:rgba(255,193,7,0.2);color:#ffc107;border:1px solid rgba(255,193,7,0.3)}
+
+        /* ─── Address ─── */
+        .addr{background:rgba(0,0,0,0.3);border-radius:12px;padding:15px;margin-bottom:20px}
+        .addr label{font-size:11px;color:#888;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+        .addr-row{display:flex;gap:10px;align-items:center;word-break:break-all}
+        .addr-row code{color:#4fc3f7;background:rgba(79,195,247,0.08);padding:8px 12px;border-radius:8px;flex:1;font-family:monospace;font-size:13px}
+        .addr-row button{background:rgba(79,195,247,0.12);border:none;color:#4fc3f7;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:16px;transition:background 0.2s}
+        .addr-row button:hover{background:rgba(79,195,247,0.25)}
+
+        /* ─── Balance ─── */
+        .balance{text-align:center;padding:20px;background:rgba(79,195,247,0.08);border-radius:12px;margin-bottom:20px}
+        .balance .amt{font-size:44px;font-weight:bold}
+        .balance .amt span{font-size:22px;color:#4fc3f7}
+        .balance .label{font-size:13px;color:#888;margin-top:4px}
+        .balance .details{display:flex;justify-content:center;gap:30px;margin-top:8px;font-size:13px;color:#666}
+        .balance .details strong{color:#e0e0e0}
+
+        /* ─── Buttons ─── */
+        .btn{width:100%;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px;transition:all 0.3s}
+        .btn-primary{background:linear-gradient(135deg,#4fc3f7,#2196f3);color:#fff}
+        .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(79,195,247,0.3)}
+        .btn-success{background:linear-gradient(135deg,#66bb6a,#43a047);color:#fff}
+        .btn-success:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(76,175,80,0.3)}
+
+        /* ─── Send ─── */
+        .send{background:rgba(0,0,0,0.2);border-radius:12px;padding:18px;margin-top:18px;border:1px solid rgba(255,255,255,0.05)}
+        .send h3{font-size:15px;margin-bottom:12px;color:#e0e0e0}
+        .send label{display:block;font-size:12px;color:#888;margin-bottom:4px}
+        .send input{width:100%;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.3);color:#fff;font-size:14px;margin-bottom:12px;outline:none}
+        .send input:focus{border-color:#4fc3f7}
+        .send input::placeholder{color:#555}
+
+        /* ─── Transactions ─── */
+        .history{margin-top:18px;border-top:1px solid rgba(255,255,255,0.05);padding-top:18px}
+        .history h3{font-size:15px;margin-bottom:12px;color:#e0e0e0}
+        .tx{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:6px;font-size:13px}
+        .tx .sent{color:#ef5350}
+        .tx .received{color:#66bb6a}
+        .tx .tx-id{color:#555;font-size:11px;font-family:monospace}
+        .no-tx{color:#444;text-align:center;padding:20px;font-size:14px}
+
+        /* ─── Toast ─── */
+        .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.95);padding:12px 24px;border-radius:10px;display:none;z-index:999;max-width:90%;border:1px solid rgba(255,255,255,0.08);font-size:14px;color:#fff}
+        .toast.show{display:block;animation:slideUp 0.3s ease}
+        .toast.success{border-color:#4caf50}
+        .toast.error{border-color:#f44336}
+        .toast.info{border-color:#4fc3f7}
+
+        @keyframes slideUp{
+            from{opacity:0;transform:translateX(-50%) translateY(20px)}
+            to{opacity:1;transform:translateX(-50%) translateY(0)}
         }
-        body {
-            font-family: Arial, sans-serif;
-            background: #0a0e1a;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            color: #fff;
-        }
-        .container {
-            background: #1a1f35;
-            border-radius: 20px;
-            padding: 30px;
-            max-width: 500px;
-            width: 100%;
-            border: 1px solid rgba(100, 200, 255, 0.1);
-        }
-        h1 {
-            text-align: center;
-            font-size: 28px;
-            margin-bottom: 20px;
-            color: #fff;
-        }
-        h1 span {
-            color: #4fc3f7;
-        }
-        .addr {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        .addr label {
-            font-size: 11px;
-            color: #888;
-            display: block;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .addr-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            word-break: break-all;
-        }
-        .addr-row code {
-            color: #4fc3f7;
-            background: rgba(79, 195, 247, 0.08);
-            padding: 8px 12px;
-            border-radius: 8px;
-            flex: 1;
-            font-family: monospace;
-            font-size: 13px;
-        }
-        .addr-row button {
-            background: rgba(79, 195, 247, 0.12);
-            border: none;
-            color: #4fc3f7;
-            padding: 8px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.2s;
-        }
-        .addr-row button:hover {
-            background: rgba(79, 195, 247, 0.25);
-        }
-        .balance {
-            text-align: center;
-            padding: 20px;
-            background: rgba(79, 195, 247, 0.08);
-            border-radius: 12px;
-            margin-bottom: 20px;
-        }
-        .balance .amt {
-            font-size: 44px;
-            font-weight: bold;
-            color: #fff;
-        }
-        .balance .amt span {
-            font-size: 22px;
-            color: #4fc3f7;
-        }
-        .balance .label {
-            font-size: 13px;
-            color: #888;
-            margin-top: 4px;
-        }
-        .balance .details {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            margin-top: 8px;
-            font-size: 13px;
-            color: #666;
-        }
-        .balance .details strong {
-            color: #e0e0e0;
-        }
-        .btn {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 8px;
-            transition: all 0.3s;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #4fc3f7, #2196f3);
-            color: #fff;
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(79, 195, 247, 0.3);
-        }
-        .btn-success {
-            background: linear-gradient(135deg, #66bb6a, #43a047);
-            color: #fff;
-        }
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
-        }
-        .send {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            padding: 18px;
-            margin-top: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        .send h3 {
-            font-size: 15px;
-            margin-bottom: 12px;
-            color: #e0e0e0;
-        }
-        .send label {
-            display: block;
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 4px;
-        }
-        .send input {
-            width: 100%;
-            padding: 10px 14px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(0, 0, 0, 0.3);
-            color: #fff;
-            font-size: 14px;
-            margin-bottom: 12px;
-            outline: none;
-        }
-        .send input:focus {
-            border-color: #4fc3f7;
-        }
-        .send input::placeholder {
-            color: #555;
-        }
-        .history {
-            margin-top: 18px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            padding-top: 18px;
-        }
-        .history h3 {
-            font-size: 15px;
-            margin-bottom: 12px;
-            color: #e0e0e0;
-        }
-        .tx {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 12px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-            margin-bottom: 6px;
-            font-size: 13px;
-        }
-        .tx .sent {
-            color: #ef5350;
-        }
-        .tx .received {
-            color: #66bb6a;
-        }
-        .tx .tx-id {
-            color: #555;
-            font-size: 11px;
-            font-family: monospace;
-        }
-        .no-tx {
-            color: #444;
-            text-align: center;
-            padding: 20px;
-            font-size: 14px;
-        }
-        .status-badge {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 6px;
-        }
-        .status-badge.online {
-            background: rgba(76, 175, 80, 0.2);
-            color: #4caf50;
-            border: 1px solid rgba(76, 175, 80, 0.3);
-        }
-        .status-badge.offline {
-            background: rgba(244, 67, 54, 0.2);
-            color: #f44336;
-            border: 1px solid rgba(244, 67, 54, 0.3);
-        }
-        .status-badge.loading {
-            background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
-            border: 1px solid rgba(255, 193, 7, 0.3);
-        }
-        .toast {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.95);
-            padding: 12px 24px;
-            border-radius: 10px;
-            display: none;
-            z-index: 999;
-            max-width: 90%;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-size: 14px;
-            color: #fff;
-        }
-        .toast.show {
-            display: block;
-            animation: slideUp 0.3s ease;
-        }
-        .toast.success {
-            border-color: #4caf50;
-        }
-        .toast.error {
-            border-color: #f44336;
-        }
-        .toast.info {
-            border-color: #4fc3f7;
-        }
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
-        }
-        .debug {
-            margin-top: 15px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            font-size: 11px;
-            color: #555;
-            word-break: break-all;
-        }
-        .debug span {
-            color: #666;
-        }
-        .subtitle {
-            text-align: center;
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 20px;
-        }
-        @media (max-width: 480px) {
-            .container {
-                padding: 18px;
-            }
-            .balance .amt {
-                font-size: 30px;
-            }
-            .addr-row code {
-                font-size: 11px;
-            }
+
+        /* ─── Debug ─── */
+        .debug{margin-top:15px;padding:10px;background:rgba(0,0,0,0.3);border-radius:8px;font-size:11px;color:#555;word-break:break-all}
+        .debug span{color:#666}
+
+        /* ─── Subtitle ─── */
+        .subtitle{text-align:center;font-size:14px;color:#888;margin-bottom:20px}
+
+        /* ─── Responsive ─── */
+        @media(max-width:480px){
+            .container{padding:18px}
+            .balance .amt{font-size:30px}
+            .addr-row code{font-size:11px}
         }
     </style>
 </head>
 <body>
 
+    <!-- Toast -->
     <div class="toast" id="toast"></div>
 
+    <!-- Main Container -->
     <div class="container">
 
+        <!-- Header -->
         <h1>ZARU <span>Wallet</span></h1>
         <div class="subtitle">Digital money for the real world</div>
 
+        <!-- Status -->
         <div style="text-align:center;">
             <span class="status-badge loading" id="statusBadge">● Connecting...</span>
         </div>
 
+        <!-- Address -->
         <div class="addr">
             <label>Your Address</label>
             <div class="addr-row">
@@ -323,6 +114,7 @@
             </div>
         </div>
 
+        <!-- Balance -->
         <div class="balance">
             <div class="amt" id="balanceDisplay">0 <span>ZARU</span></div>
             <div class="label">Available Balance</div>
@@ -332,8 +124,10 @@
             </div>
         </div>
 
+        <!-- Refresh -->
         <button class="btn btn-primary" onclick="refresh()">🔄 Refresh</button>
 
+        <!-- Send -->
         <div class="send">
             <h3>💸 Send ZARU</h3>
             <label>Recipient Address</label>
@@ -343,6 +137,7 @@
             <button class="btn btn-success" onclick="send()">Send ZARU</button>
         </div>
 
+        <!-- Transactions -->
         <div class="history">
             <h3>📜 Transactions</h3>
             <div id="transactionHistory">
@@ -350,6 +145,7 @@
             </div>
         </div>
 
+        <!-- Debug -->
         <div class="debug">
             API: <span id="debugApi">https://zaru-api.onrender.com</span><br>
             Status: <span id="debugStatus">Loading...</span>
@@ -359,15 +155,17 @@
 
     <script>
         // ============================================
-        // ZARU WALLET — COMPLETE WORKING VERSION
+        // ZARU WALLET — COMPLETE FIXED VERSION
         // ============================================
 
+        // ─── Configuration ───
         var API = 'https://zaru-api.onrender.com';
         var currentAddress = '';
         var addresses = [];
         var balance = 0;
         var pending = 0;
 
+        // ─── Toast Notification ───
         function toast(msg, type) {
             if (!type) type = 'info';
             var el = document.getElementById('toast');
@@ -379,25 +177,23 @@
             }, 4000);
         }
 
+        // ─── API Call ───
         async function call(endpoint, method, body) {
             if (!method) method = 'GET';
             var opts = {
                 method: method,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                headers: { 'Content-Type': 'application/json' }
             };
             if (body) opts.body = JSON.stringify(body);
             var res = await fetch(API + endpoint, opts);
             if (!res.ok) {
-                var err = await res.json().catch(function() {
-                    return {};
-                });
+                var err = await res.json().catch(function() { return {}; });
                 throw new Error(err.detail || err.message || 'HTTP ' + res.status);
             }
             return res.json();
         }
 
+        // ─── Status Badge ───
         function setStatus(status, text) {
             var el = document.getElementById('statusBadge');
             if (el) {
@@ -406,6 +202,7 @@
             }
         }
 
+        // ─── Load Wallet ───
         async function load() {
             try {
                 setStatus('loading', '● Connecting...');
@@ -436,12 +233,14 @@
             }
         }
 
+        // ─── Refresh ───
         async function refresh() {
             toast('Refreshing...', 'info');
             await load();
             toast('✅ Refreshed!', 'success');
         }
 
+        // ─── Create Address ───
         async function createAddress() {
             try {
                 var data = await call('/wallet/address', 'POST', {
@@ -460,6 +259,7 @@
             }
         }
 
+        // ─── Refresh Balance ───
         async function refreshBalance() {
             if (!currentAddress) return;
             try {
@@ -472,6 +272,7 @@
             }
         }
 
+        // ─── Update Balance Display ───
         function updateBalance() {
             var b = (balance / 100000000).toFixed(8);
             var p = (pending / 100000000).toFixed(8);
@@ -481,6 +282,7 @@
             document.getElementById('totalBalance').textContent = t;
         }
 
+        // ─── Refresh Transactions ───
         async function refreshTxs() {
             if (!currentAddress) return;
             try {
@@ -491,6 +293,7 @@
             }
         }
 
+        // ─── Render Transactions ───
         function renderTxs(txs) {
             var container = document.getElementById('transactionHistory');
             if (!txs || txs.length === 0) {
@@ -513,6 +316,7 @@
             container.innerHTML = html;
         }
 
+        // ─── Copy Address ───
         function copyAddress() {
             if (!currentAddress) {
                 toast('No address to copy', 'error');
@@ -533,6 +337,7 @@
                 });
         }
 
+        // ─── Send Transaction ───
         async function send() {
             var to = document.getElementById('sendTo').value.trim();
             var amtInput = document.getElementById('sendAmount').value;
@@ -575,6 +380,7 @@
             }
         }
 
+        // ─── Init ───
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('debugApi').textContent = API;
             load();
@@ -582,6 +388,7 @@
 
         console.log('🔐 ZARU Wallet loaded');
         console.log('📡 API:', API);
+        console.log('💡 Click the ➕ button to create your first address!');
     </script>
 
 </body>
