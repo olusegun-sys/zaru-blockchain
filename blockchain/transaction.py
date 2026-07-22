@@ -5,7 +5,7 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
-FIXED: Coinbase validation uses MAX_COINBASE_REWARD instead of INITIAL_COIN_SUPPLY.
+FIXED: Coinbase validation uses MAX_COINBASE_REWARD from config.
 """
 
 import hashlib
@@ -228,10 +228,10 @@ class Transaction(BaseModel):
             if len(self.outputs) != 1:
                 return False, "Coinbase transaction must have exactly one output"
             # FIXED: Check against MAX_COINBASE_REWARD, not total supply
-            # 50 ZARU = 5,000,000,000 satoshis (max block reward)
             MAX_COINBASE_REWARD = getattr(settings, 'MAX_COINBASE_REWARD', 5_000_000_000)
             if self.outputs[0].amount > MAX_COINBASE_REWARD:
                 return False, f"Coinbase amount ({self.outputs[0].amount}) exceeds max reward ({MAX_COINBASE_REWARD})"
+            print(f"✅ Coinbase validated: {self.outputs[0].amount} satoshis to {self.outputs[0].address[:10]}...")
             return True, "Valid coinbase transaction"
         
         # 3. Check inputs exist
@@ -272,7 +272,6 @@ class Transaction(BaseModel):
             # ============================================
             # 🔥 BURN MECHANISM 🔥
             # ============================================
-            # Burn 1% of the fee to create scarcity
             if fee > 0:
                 burn_amount = fee // 100  # 1% burn
                 if burn_amount > 0:
@@ -282,7 +281,6 @@ class Transaction(BaseModel):
                         address=burn_address
                     ))
                     
-                    # Track total burned in database
                     from database import store
                     total_burned = store.get_chain_state('total_burned') or 0
                     total_burned += burn_amount
