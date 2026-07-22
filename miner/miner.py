@@ -5,6 +5,7 @@ Handles Proof of Work mining and block creation.
 
 ADDED: Easy mode for bot mining (reduced difficulty)
 FIXED: Coinbase transaction properly added to all mined blocks
+VERSION: 2.0 - With Coinbase Fix
 """
 
 import time
@@ -76,7 +77,7 @@ class Miner:
             self.chain_manager._difficulty = settings.EASY_DIFFICULTY
             self.chain_manager.store.put_chain_state('difficulty', settings.EASY_DIFFICULTY)
         
-        print(f"✅ Miner initialized")
+        print(f"✅ Miner initialized (VERSION 2.0 - COINBASE FIX)")
         print(f"   Address: {address or 'Not set - mining disabled'}")
         print(f"   Difficulty: {self.chain_manager.get_difficulty()}")
         print(f"   Mode: {'Easy' if easy_mode else 'Normal'}")
@@ -321,6 +322,7 @@ class Miner:
         
         def mining_loop():
             print(f"🚀 Started mining (continuous={continuous}, easy={self.easy_mode})")
+            print(f"🔍 VERSION 2.0 - WITH COINBASE FIX RUNNING")
             
             while self.is_mining and not self.stop_event.is_set():
                 if not block:
@@ -409,7 +411,10 @@ class Miner:
         Mine a test block with lower difficulty.
         
         FIXED: Ensures coinbase transaction is added to the block.
+        VERSION: 2.0 - With Coinbase Fix
         """
+        print("🔍 VERSION 2.0 - WITH COINBASE FIX (mine_test_block)")
+        
         if difficulty is None:
             difficulty = settings.EASY_DIFFICULTY
         
@@ -420,15 +425,17 @@ class Miner:
         except:
             pass
         
-        # Create coinbase transaction (mining reward)
+        # Create coinbase transaction (mining reward) - THIS IS CRITICAL
         reward = 50_000_000  # 50 ZARU
         coinbase = create_coinbase_transaction(
             self.address or "TEST_MINER_ADDRESS", 
             reward
         )
+        print(f"🔍 Created coinbase: {coinbase.tx_id[:16]}... for {self.address or 'TEST_MINER_ADDRESS'}")
         
-        # Add coinbase as first transaction
+        # Add coinbase as first transaction - THIS IS CRITICAL
         all_transactions = [coinbase] + transactions
+        print(f"🔍 Total transactions: {len(all_transactions)} (1 coinbase + {len(transactions)} from mempool)")
         
         # Create block
         block = Block()
@@ -440,7 +447,7 @@ class Miner:
             block_height=self.chain_manager.get_height()
         )
         
-        # Add ALL transactions (including coinbase)
+        # Add ALL transactions (including coinbase) - THIS IS CRITICAL
         for tx in all_transactions:
             block.add_transaction(tx)
         
@@ -451,8 +458,10 @@ class Miner:
         block.transaction_count = len(block.transactions)
         
         print("🧪 Mining test block...")
-        print(f"   Coinbase reward: {reward} satoshis")
+        print(f"   Coinbase reward: {reward} satoshis (0.5 ZARU)")
         print(f"   Transactions: {len(block.transactions)} (including coinbase)")
+        print(f"   Block height: {block.header.block_height}")
+        print(f"   Mining address: {self.address or 'TEST_MINER_ADDRESS'}")
         
         # Mine with multiple threads
         mined = self.mine_block_parallel(block, num_threads=4)
@@ -462,6 +471,9 @@ class Miner:
             print(f"   Hash: {mined.hash}")
             print(f"   Nonce: {mined.header.nonce}")
             print(f"   Transactions: {len(mined.transactions)}")
+            print(f"   Coinbase included: {len([tx for tx in mined.transactions if tx.is_coinbase])}")
+        else:
+            print("❌ Failed to mine test block")
         
         return mined
 
