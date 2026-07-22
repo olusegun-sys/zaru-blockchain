@@ -4,7 +4,7 @@ ZARU Configuration Module
 Simple configuration using Python dataclasses + dotenv.
 
 FIXED: Handles Render.com deployment with proper PORT parsing.
-ADDED: Burn mechanism and easy difficulty for bot mining.
+FIXED: CORS configuration to allow wallet access.
 """
 
 import os
@@ -77,25 +77,16 @@ class Settings(BaseModel):
     MAX_BLOCK_SIZE_BYTES: int = 1_000_000
     DIFFICULTY_ADJUSTMENT_INTERVAL: int = 2016
     
-    # 🔥 BURN ADDRESS - All burned coins go here
-    BURN_ADDRESS: str = "ZARU_BURN_0000000000000000000000000000000000000000"
-    BURN_PERCENTAGE: int = 1  # 1% of fees burned
-    
     # ============================================
     # MINING SETTINGS - EASY MODE FOR BOTS
     # ============================================
     
-    # Mainnet difficulty (hard)
     INITIAL_DIFFICULTY: int = 0x1d00ffff
-    
-    # Easy difficulty for bot mining (10,000x easier)
     EASY_DIFFICULTY: int = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
     MIN_TARGET: int = 0x00000000ffff0000000000000000000000000000000000000000000000000000
     MAX_TARGET: int = 0x00000000ffff0000000000000000000000000000000000000000000000000000
-    
-    # Auto-adjust difficulty based on block time
     AUTO_DIFFICULTY: bool = True
-    TARGET_BLOCK_TIME: int = 60  # Target 60 seconds for easy mining
+    TARGET_BLOCK_TIME: int = 60
     
     # ============================================
     # MEMPOOL SETTINGS
@@ -131,12 +122,29 @@ class Settings(BaseModel):
     MIN_RELAY_FEE: int = 500
     
     # ============================================
-    # SECURITY SETTINGS
+    # SECURITY & CORS SETTINGS - FIXED
     # ============================================
     
-    ENABLE_CORS: bool = os.getenv("ZARU_ENABLE_CORS", "true").lower() == "true"
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # CORS configuration
+    # Set ENABLE_CORS to True to restrict origins, False to allow all
+    ENABLE_CORS: bool = os.getenv("ZARU_ENABLE_CORS", "false").lower() == "true"
+    
+    # Allowed origins for CORS (only used if ENABLE_CORS is True)
+    # Default includes localhost and Render URLs
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "https://zaru-wallet.onrender.com",
+        "https://zaru-api.onrender.com",
+        "https://zaru-wallet.vercel.app",
+    ]
+    
+    # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 100
+    
+    # JWT Secret
     JWT_SECRET_KEY: Optional[str] = os.getenv("ZARU_JWT_SECRET")
     
     # ============================================
@@ -153,6 +161,13 @@ class Settings(BaseModel):
     IS_TESTNET: bool = os.getenv("ZARU_TESTNET", "true").lower() == "true"
     TESTNET_PORT: int = int(os.getenv("ZARU_TESTNET_PORT", "18333"))
     TESTNET_API_PORT: int = int(os.getenv("ZARU_TESTNET_API_PORT", "18332"))
+    
+    # ============================================
+    # BURN ADDRESS
+    # ============================================
+    
+    BURN_ADDRESS: str = "ZARU_BURN_0000000000000000000000000000000000000000"
+    BURN_PERCENTAGE: int = 1
     
     # ============================================
     # PYDANTIC V2 CONFIG
@@ -219,9 +234,8 @@ def print_config_summary():
     print(f"Database Backend: {get_db_backend()}")
     print(f"Data Directory: {get_data_dir()}")
     print(f"Log Level: {settings.LOG_LEVEL}")
-    print(f"Burn Address: {settings.BURN_ADDRESS[:20]}...")
-    print(f"Burn Percentage: {settings.BURN_PERCENTAGE}%")
-    print(f"Easy Difficulty: {settings.EASY_DIFFICULTY}")
+    print(f"CORS Enabled: {settings.ENABLE_CORS}")
+    print(f"CORS Origins: {settings.ALLOWED_ORIGINS if settings.ENABLE_CORS else ['*']}")
     
     if os.getenv("RENDER"):
         print(f"Platform: Render.com")
