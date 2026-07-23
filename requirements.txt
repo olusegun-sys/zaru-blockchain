@@ -1,68 +1,44 @@
 # ============================================
-# ZARU PRODUCTION DEPENDENCIES
-# ============================================
-# Optimized for Python 3.12 (Render.com)
-# All packages with pre-compiled wheels
+# ZARU PRODUCTION DEPENDENCIES - RENDER WEB
 # ============================================
 
-# ============================================
-# WEB FRAMEWORK & API
-# ============================================
-fastapi==0.109.2               # REST API framework
-uvicorn[standard]==0.27.1      # ASGI server
-pydantic==2.7.4                # Data validation (pre-compiled for 3.12)
-pydantic-settings==2.3.4       # Settings management
-python-multipart==0.0.9        # Form data parsing
+# Web Framework & API
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.7.4
+pydantic-settings==2.3.4
+python-multipart==0.0.9
 
-# ============================================
-# CRYPTOGRAPHY
-# ============================================
-ecdsa==0.18.0                  # Digital signatures (pure Python)
-cryptography==42.0.5           # AES encryption (pre-compiled)
+# Flask (for Render Web Service health checks)
+Flask==3.0.0
 
-# ============================================
-# DATABASE
-# ============================================
-# SQLite is built into Python
-psycopg2-binary==2.9.9         # PostgreSQL adapter (binary)
+# Cryptography
+ecdsa==0.18.0
+cryptography==42.0.5
 
-# ============================================
-# NETWORKING
-# ============================================
-websockets==12.0               # WebSocket support
+# Database
+psycopg2-binary==2.9.9
 
-# ============================================
-# SYSTEM & UTILITIES
-# ============================================
-python-dotenv==1.0.1           # Environment variables
-colorama==0.4.6                # Colored terminal output
-click==8.1.7                   # CLI framework
-schedule==1.2.2                # Task scheduling
-psutil==5.9.8                  # System monitoring
+# Networking
+websockets==12.0
 
-# ============================================
-# MONITORING & LOGGING
-# ============================================
-prometheus-client==0.20.0      # Metrics
-structlog==24.1.0              # Structured logging
+# System & Utilities
+python-dotenv==1.0.1
+colorama==0.4.6
+click==8.1.7
+schedule==1.2.2
+psutil==5.9.8
 
-# ============================================
-# TESTING
-# ============================================
-pytest==8.0.0                  # Testing framework
-pytest-asyncio==0.23.5         # Async testing
-pytest-cov==4.1.0              # Code coverage
+# Monitoring & Logging
+prometheus-client==0.20.0
+structlog==24.1.0
 
-# ============================================
-# DEVELOPMENT
-# ============================================
-black==24.2.0                  # Code formatter
-mypy==1.8.0                    # Static type checking
-ruff==0.3.0                    # Fast Python linter
+# Testing (Optional)
+pytest==8.0.0
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
 
-# ============================================
-# REQUIREMENTS FOR PYTHON 3.12:
-# - All packages have pre-compiled wheels
-# - No Rust/Cargo compilation needed
-# - Works on Render's read-only filesystem
-# ============================================
+# Development (Optional)
+black==24.2.0
+mypy==1.8.0
+ruff==0.3.0
