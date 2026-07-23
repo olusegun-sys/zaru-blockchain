@@ -5,9 +5,7 @@ Development database backend using SQLite (built into Python).
 WHY: SQLite works on Windows, macOS, and Linux without compilation.
 It's perfect for development and testing.
 
-HOW IT WORKS:
-SQLite is a file-based database. All data is stored in a single file
-(zaru_ledger.db) in the data directory.
+ADDED: Debug logging for UTXO queries to troubleshoot balance issues.
 """
 
 import json
@@ -214,7 +212,7 @@ class SQLiteStore(BaseStore):
             return 0
     
     # ============================================
-    # UTXO STORAGE METHODS
+    # UTXO STORAGE METHODS - WITH DEBUG LOGGING
     # ============================================
     
     def put_utxo(
@@ -241,6 +239,7 @@ class SQLiteStore(BaseStore):
             ))
             
             self.connection.commit()
+            print(f"✅ UTXO stored: {tx_id[:16]}...:{output_index} = {amount} satoshis to {address[:10]}...")
             return True
         except Exception as e:
             print(f"❌ Error storing UTXO {tx_id}:{output_index}: {e}")
@@ -286,24 +285,29 @@ class SQLiteStore(BaseStore):
             return False
     
     def get_utxos_for_address(self, address: str) -> List[Dict[str, Any]]:
-        """Get all unspent UTXOs for an address"""
+        """Get all unspent UTXOs for an address - WITH DEBUG LOGGING"""
         try:
+            print(f"🔍 SQLite: Querying UTXOs for address: {address[:10]}...")
             self.cursor.execute("""
-                SELECT tx_id, output_index, amount, block_height
+                SELECT tx_id, output_index, amount, block_height, is_spent
                 FROM utxos 
                 WHERE address = ? AND is_spent = 0
                 ORDER BY block_height ASC
             """, (address,))
             
             rows = self.cursor.fetchall()
+            print(f"🔍 SQLite: Found {len(rows)} UTXOs for {address[:10]}...")
+            
             result = []
             for row in rows:
-                result.append({
+                utxo_data = {
                     'tx_id': row[0],
                     'output_index': row[1],
                     'amount': row[2],
                     'block_height': row[3]
-                })
+                }
+                result.append(utxo_data)
+                print(f"   UTXO: {row[0][:16]}... idx:{row[1]} amt:{row[2]} at height:{row[3]}")
             return result
         except Exception as e:
             print(f"❌ Error getting UTXOs for address {address}: {e}")
