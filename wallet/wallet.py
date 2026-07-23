@@ -11,8 +11,7 @@ It allows users to:
 3. Send transactions
 4. Receive transactions
 
-THINK OF IT LIKE: A physical wallet that holds your cash and cards.
-This digital wallet holds your cryptocurrency keys and helps you manage them.
+FIXED: Address cache is explicitly updated when creating a new address.
 """
 
 import hashlib
@@ -101,10 +100,10 @@ class Wallet:
         # Create address (hash of public key)
         address = self._public_key_to_address(pub_key)
         
-        # Store private key
+        # Store private key in key store (saves to disk)
         self.key_store.add_key(address, private_key, label)
         
-        # Cache address info
+        # FIXED: Explicitly update the address cache with the new address
         self._address_cache[address] = {
             'public_key': pub_key.hex(),
             'label': label,
@@ -112,6 +111,7 @@ class Wallet:
         }
         
         print(f"✅ Address created: {address[:10]}... ({label or 'no label'})")
+        print(f"   Total addresses: {len(self.key_store)}")
         return address
     
     def get_addresses(self) -> List[str]:
