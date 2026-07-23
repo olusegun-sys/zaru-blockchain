@@ -5,7 +5,8 @@ Handles Proof of Work mining and block creation.
 
 ADDED: Easy mode for bot mining (reduced difficulty)
 FIXED: Coinbase transaction properly added to all mined blocks
-VERSION: 2.0 - With Coinbase Fix
+FIXED: UnboundLocalError in mining_loop (block variable initialized)
+VERSION: 2.1 - With Mining Loop Fix
 """
 
 import time
@@ -77,7 +78,7 @@ class Miner:
             self.chain_manager._difficulty = settings.EASY_DIFFICULTY
             self.chain_manager.store.put_chain_state('difficulty', settings.EASY_DIFFICULTY)
         
-        print(f"✅ Miner initialized (VERSION 2.0 - COINBASE FIX)")
+        print(f"✅ Miner initialized (VERSION 2.1 - MINING LOOP FIX)")
         print(f"   Address: {address or 'Not set - mining disabled'}")
         print(f"   Difficulty: {self.chain_manager.get_difficulty()}")
         print(f"   Mode: {'Easy' if easy_mode else 'Normal'}")
@@ -304,7 +305,7 @@ class Miner:
         return success, message
     
     # ============================================
-    # CONTINUOUS MINING
+    # CONTINUOUS MINING - FIXED
     # ============================================
     
     def start_mining(self, continuous: bool = True, num_threads: int = 1, block: Optional[Block] = None) -> None:
@@ -321,29 +322,32 @@ class Miner:
         self.stop_event.clear()
         
         def mining_loop():
+            """Main mining loop - FIXED: block variable initialized."""
             print(f"🚀 Started mining (continuous={continuous}, easy={self.easy_mode})")
-            print(f"🔍 VERSION 2.0 - WITH COINBASE FIX RUNNING")
+            print(f"🔍 VERSION 2.1 - WITH MINING LOOP FIX")
+            
+            current_block = block  # ← FIX: Use local variable initialized from argument
             
             while self.is_mining and not self.stop_event.is_set():
-                if not block:
-                    block = self.create_block_template()
+                if not current_block:
+                    current_block = self.create_block_template()
                 
-                if not block:
+                if not current_block:
                     print("❌ Failed to create block template")
                     time.sleep(5)
                     continue
                 
                 if num_threads > 1:
-                    mined = self.mine_block_parallel(block, num_threads)
+                    mined = self.mine_block_parallel(current_block, num_threads)
                 else:
-                    mined = self.mine_block(block)
+                    mined = self.mine_block(current_block)
                 
                 if mined:
                     success, message = self.submit_block(mined)
                     
                     if success:
                         print(f"✅ Block {mined.header.block_height} added to chain")
-                        block = None
+                        current_block = None
                     else:
                         print(f"❌ Failed to submit block: {message}")
                         time.sleep(1)
@@ -411,9 +415,8 @@ class Miner:
         Mine a test block with lower difficulty.
         
         FIXED: Ensures coinbase transaction is added to the block.
-        VERSION: 2.0 - With Coinbase Fix
         """
-        print("🔍 VERSION 2.0 - WITH COINBASE FIX (mine_test_block)")
+        print("🔍 VERSION 2.1 - WITH MINING LOOP FIX (mine_test_block)")
         
         if difficulty is None:
             difficulty = settings.EASY_DIFFICULTY
@@ -425,7 +428,7 @@ class Miner:
         except:
             pass
         
-        # Create coinbase transaction (mining reward) - THIS IS CRITICAL
+        # Create coinbase transaction (mining reward)
         reward = 50_000_000  # 50 ZARU
         coinbase = create_coinbase_transaction(
             self.address or "TEST_MINER_ADDRESS", 
@@ -433,7 +436,7 @@ class Miner:
         )
         print(f"🔍 Created coinbase: {coinbase.tx_id[:16]}... for {self.address or 'TEST_MINER_ADDRESS'}")
         
-        # Add coinbase as first transaction - THIS IS CRITICAL
+        # Add coinbase as first transaction
         all_transactions = [coinbase] + transactions
         print(f"🔍 Total transactions: {len(all_transactions)} (1 coinbase + {len(transactions)} from mempool)")
         
@@ -447,7 +450,7 @@ class Miner:
             block_height=self.chain_manager.get_height()
         )
         
-        # Add ALL transactions (including coinbase) - THIS IS CRITICAL
+        # Add ALL transactions (including coinbase)
         for tx in all_transactions:
             block.add_transaction(tx)
         
