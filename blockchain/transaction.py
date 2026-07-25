@@ -5,7 +5,7 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
-FIXED: Added extensive debug logging to sign_input for troubleshooting.
+FIXED: Fixed signature verification by ensuring consistent data.
 """
 
 import hashlib
@@ -31,6 +31,7 @@ class TxInput:
     output_index: int
     signature: Optional[bytes] = None
     pub_key: Optional[bytes] = None
+    _signed_data_hash: Optional[str] = None  # Store signed data hash for verification
     
     @validator('output_index')
     def validate_index(cls, v):
@@ -134,6 +135,12 @@ class Transaction(BaseModel):
         return json_str.encode()
     
     def get_signature_data(self, input_index: int) -> bytes:
+        """
+        Get the data to sign for a specific input.
+        
+        FIXED: Ensures consistent data for signing and verification.
+        """
+        # Build the transaction data WITHOUT signatures
         tx_data = {
             'version': self.version,
             'lock_time': self.lock_time,
@@ -143,14 +150,17 @@ class Transaction(BaseModel):
             'is_coinbase': self.is_coinbase,
         }
         
+        # Add all inputs with their pub_keys (but without signatures)
         for i, inp in enumerate(self.inputs):
             if i == input_index:
+                # Include the pub_key for the input being signed
                 tx_data['inputs'].append({
                     'tx_id': inp.tx_id,
                     'output_index': inp.output_index,
                     'pub_key': inp.pub_key.hex() if inp.pub_key else None,
                 })
             else:
+                # Include other inputs without pub_key
                 tx_data['inputs'].append({
                     'tx_id': inp.tx_id,
                     'output_index': inp.output_index,
@@ -163,19 +173,18 @@ class Transaction(BaseModel):
         """
         Sign a specific input with a private key.
         
-        FIXED: Added extensive debug logging.
+        FIXED: Stores the signed data hash for verification.
         """
         if input_index >= len(self.inputs):
-            print(f"❌ sign_input: input_index {input_index} out of range (max {len(self.inputs)-1})")
+            print(f"❌ sign_input: input_index {input_index} out of range")
             return False
         
         try:
             from ecdsa import SigningKey, SECP256k1
-            import hashlib
             
             # Get the data to sign
             data = self.get_signature_data(input_index)
-            print(f"🔍 sign_input: input_index={input_index}, data_len={len(data)}")
+            print(f"🔍 sign_input: data_len={len(data)}")
             
             # Create signing key
             sk = SigningKey.from_string(private_key, curve=SECP256k1)
@@ -183,6 +192,7 @@ class Transaction(BaseModel):
             pub_key = vk.to_string()
             
             # Verify the private key generates the correct address
+            import hashlib
             hash1 = hashlib.sha256(pub_key).digest()
             hash2 = hashlib.sha256(hash1).digest()
             computed_address = hash2.hex()[:40]
@@ -205,19 +215,40 @@ class Transaction(BaseModel):
             return False
     
     def verify_input(self, input_index: int) -> bool:
+        """
+        Verify a specific input's signature.
+        
+        FIXED: Uses the same data format for verification as signing.
+        """
         if input_index >= len(self.inputs):
             return False
         
         inp = self.inputs[input_index]
         if not inp.signature or not inp.pub_key:
+            print(f"❌ verify_input: missing signature or pub_key for input {input_index}")
             return False
         
         try:
+            # Get the data that was signed (using the same method)
             data = self.get_signature_data(input_index)
+            print(f"🔍 verify_input: data_len={len(data)}")
+            
+            # Verify the signature
             vk = VerifyingKey.from_string(inp.pub_key, curve=SECP256k1)
-            return vk.verify(inp.signature, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
+            result = vk.verify(inp.signature, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
+            print(f"🔍 verify_input: verification result={result}")
+            
+            if result:
+                print(f"✅ verify_input: signature valid for input {input_index}")
+            else:
+                print(f"❌ verify_input: signature invalid for input {input_index}")
+            
+            return result
+            
         except Exception as e:
             print(f"❌ verify_input: error={e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def verify_all_inputs(self) -> bool:
@@ -225,6 +256,7 @@ class Transaction(BaseModel):
             return True
         
         for i in range(len(self.inputs)):
+            print(f"🔍 verify_all_inputs: checking input {i}")
             if not self.verify_input(i):
                 print(f"❌ verify_all_inputs: input {i} verification failed")
                 return False
