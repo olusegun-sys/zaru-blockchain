@@ -6,8 +6,8 @@ Runs as a web service with Flask to keep the miner alive.
 Render pings /health every few minutes, which keeps the service awake.
 The miner runs in a background thread while Flask handles requests.
 
-FIXED: Force mining to the specific wallet address with 403 ZARU.
-All mined coins will go to: 1f6254f2f4dfb787262f6b3e18d482a77cd6a979
+FIXED: Force PostgreSQL for database consistency.
+FIXED: Force mining address to 1f6254f2f4dfb787262f6b3e18d482a77cd6a979.
 ADDED: Export private key endpoint and send endpoint.
 """
 
@@ -17,6 +17,11 @@ import time
 import threading
 import logging
 from datetime import datetime
+
+# ============================================
+# FORCE POSTGRESQL - MUST BE BEFORE ANY IMPORTS
+# ============================================
+os.environ["ZARU_DB_BACKEND"] = "postgresql"
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +33,7 @@ from miner import miner
 from wallet import wallet
 from blockchain.chain_manager import chain_manager
 from blockchain.transaction import Transaction, TxInput, TxOutput, create_transaction
-from blockchain.utxo import get_utxos_for_address
+from blockchain.utxo import get_utxos_for_address, UTXOSet
 from mempool import mempool
 
 # ============================================
@@ -43,6 +48,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================
+# CONSTANTS
+# ============================================
+
+MINING_ADDRESS = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+
+# ============================================
 # FLASK APP
 # ============================================
 
@@ -50,7 +61,7 @@ app = Flask(__name__)
 
 # Global state
 mining_active = False
-mining_address = None
+mining_address = MINING_ADDRESS
 start_time = time.time()
 blocks_mined = 0
 
@@ -80,16 +91,11 @@ def start_mining_route():
     global mining_active, mining_address
     if not mining_active:
         try:
-            # FORCE: Use the specific wallet address with 403 ZARU
-            mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
-            logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
-            
-            miner.set_mining_address(mining_address)
+            miner.set_mining_address(MINING_ADDRESS)
             miner.start_mining(continuous=True, num_threads=2)
             mining_active = True
-            logger.info(f"✅ Mining started with address: {mining_address}")
-            logger.info(f"💰 All rewards will go to: {mining_address}")
-            return jsonify({"status": "started", "address": mining_address})
+            logger.info(f"✅ Mining started with address: {MINING_ADDRESS}")
+            return jsonify({"status": "started", "address": MINING_ADDRESS})
         except Exception as e:
             logger.error(f"❌ Failed to start mining: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
@@ -111,14 +117,13 @@ def status():
     """Detailed status endpoint."""
     stats = miner.get_stats() if mining_active else {}
     balance = 0
-    if mining_address:
-        try:
-            balance = wallet.get_balance(mining_address)
-        except:
-            pass
+    try:
+        balance = wallet.get_balance(MINING_ADDRESS)
+    except:
+        pass
     return jsonify({
         "mining": mining_active,
-        "address": mining_address,
+        "address": MINING_ADDRESS,
         "balance_satoshis": balance,
         "balance_zar": balance / 100000000 if balance else 0,
         "blocks_mined": stats.get('blocks_mined', 0),
@@ -135,23 +140,16 @@ def export_private_key():
     
     Returns:
         JSON with address and private_key_hex
-    
-    WHY: This allows importing the mining address into the API wallet
-    so users can send ZARU from the mining address.
     """
     try:
-        if not mining_address:
-            return jsonify({"error": "Mining address not set"}), 400
-        
-        # Get the private key from the wallet's key store
-        private_key = wallet.key_store.get_private_key(mining_address)
+        private_key = wallet.key_store.get_private_key(MINING_ADDRESS)
         
         if not private_key:
             return jsonify({"error": "Private key not found for mining address"}), 404
         
         return jsonify({
             "success": True,
-            "address": mining_address,
+            "address": MINING_ADDRESS,
             "private_key_hex": private_key.hex()
         })
     except Exception as e:
@@ -168,9 +166,6 @@ def send_from_mining():
         "to_address": "recipient_address",
         "amount": 100000000  # amount in satoshis
     }
-    
-    Returns:
-        JSON with transaction result
     """
     try:
         # Get request data
@@ -189,14 +184,19 @@ def send_from_mining():
         
         amount = int(amount)
         
-        # Check if mining address is set
-        if not mining_address:
-            return jsonify({"error": "Mining address not set"}), 400
+        # Get private key
+        private_key = wallet.key_store.get_private_key(MINING_ADDRESS)
+        if not private_key:
+            logger.error(f"❌ Private key not found for {MINING_ADDRESS}")
+            return jsonify({"error": "Private key not found for mining address"}), 400
         
         # Get UTXOs for the mining address
-        utxos = get_utxos_for_address(mining_address)
+        utxos = get_utxos_for_address(MINING_ADDRESS)
         if not utxos:
+            logger.error(f"❌ No UTXOs found for {MINING_ADDRESS}")
             return jsonify({"error": "No UTXOs found for mining address"}), 400
+        
+        logger.info(f"🔍 Found {len(utxos)} UTXOs for {MINING_ADDRESS[:10]}...")
         
         # Select UTXOs to cover the amount
         selected_utxos = []
@@ -204,14 +204,15 @@ def send_from_mining():
         for utxo in utxos:
             selected_utxos.append(utxo)
             total_selected += utxo['amount']
+            logger.info(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
             if total_selected >= amount:
                 break
         
         if total_selected < amount:
             return jsonify({"error": f"Insufficient funds: need {amount}, have {total_selected}"}), 400
         
-        # Calculate fee (use default)
-        fee = 1000  # Small fee
+        # Calculate fee
+        fee = 1000
         
         # Create transaction inputs
         inputs = []
@@ -227,12 +228,7 @@ def send_from_mining():
         # Add change output if needed
         change = total_selected - amount - fee
         if change > 0:
-            outputs.append(TxOutput(amount=change, address=mining_address))
-        
-        # Get private key
-        private_key = wallet.key_store.get_private_key(mining_address)
-        if not private_key:
-            return jsonify({"error": "Private key not found for mining address"}), 400
+            outputs.append(TxOutput(amount=change, address=MINING_ADDRESS))
         
         # Create and sign transaction
         tx = create_transaction(inputs, outputs, private_key)
@@ -240,10 +236,10 @@ def send_from_mining():
             return jsonify({"error": "Failed to create transaction"}), 400
         
         # Validate transaction
-        from blockchain.utxo import UTXOSet
         utxo_set = UTXOSet()
         is_valid, error = utxo_set.validate_transaction(tx)
         if not is_valid:
+            logger.error(f"❌ Transaction invalid: {error}")
             return jsonify({"error": f"Transaction invalid: {error}"}), 400
         
         # Add to mempool
@@ -251,7 +247,7 @@ def send_from_mining():
         if not success:
             return jsonify({"error": f"Failed to add to mempool: {message}"}), 400
         
-        logger.info(f"✅ Transaction sent from {mining_address[:10]}... to {to_address[:10]}...")
+        logger.info(f"✅ Transaction sent from {MINING_ADDRESS[:10]}... to {to_address[:10]}...")
         logger.info(f"   Amount: {amount} satoshis")
         logger.info(f"   TX ID: {tx.tx_id[:16]}...")
         
@@ -260,13 +256,15 @@ def send_from_mining():
             "message": "Transaction sent successfully",
             "tx_id": tx.tx_id,
             "amount": amount,
-            "from_address": mining_address,
+            "from_address": MINING_ADDRESS,
             "to_address": to_address,
             "fee": fee
         })
         
     except Exception as e:
         logger.error(f"❌ Failed to send transaction: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 # ============================================
@@ -280,28 +278,25 @@ if __name__ == "__main__":
     logger.info(f"   Time: {datetime.now().isoformat()}")
     logger.info(f"   Python: {sys.version}")
     logger.info(f"   Working Dir: {os.getcwd()}")
+    logger.info(f"   Database Backend: {os.getenv('ZARU_DB_BACKEND', 'SQLite')}")
+    logger.info(f"   DATABASE_URL: {os.getenv('DATABASE_URL', 'Not set')[:30]}...")
     
-    # FORCE: Use the specific wallet address with 403 ZARU
-    mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
-    logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
-    logger.info(f"📍 This address has 403.5 ZARU")
-    logger.info(f"🔑 Private key is stored in the miner's key store")
-    logger.info(f"📤 Use /export_private_key to get the private key")
-    logger.info(f"📤 Use /send_to to send ZARU from the mining address")
+    logger.info(f"💰 MINING ADDRESS: {MINING_ADDRESS}")
+    logger.info(f"📍 This address has {wallet.get_balance(MINING_ADDRESS)} satoshis")
     
     # Set the mining address
-    miner.set_mining_address(mining_address)
+    miner.set_mining_address(MINING_ADDRESS)
     
-    # Start mining with 2 threads (balanced for Render free tier)
+    # Start mining with 2 threads
     miner.start_mining(continuous=True, num_threads=2)
     mining_active = True
     
     logger.info(f"✅ Mining started successfully!")
-    logger.info(f"   Address: {mining_address}")
+    logger.info(f"   Address: {MINING_ADDRESS}")
     logger.info(f"   Threads: 2")
     logger.info(f"   Mode: Continuous")
     
-    # Run Flask web server for health checks
+    # Run Flask web server
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🌐 Starting Flask server on port {port}")
     logger.info("=" * 60)
