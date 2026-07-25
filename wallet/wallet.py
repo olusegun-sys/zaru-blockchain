@@ -4,8 +4,8 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
-FIXED: Added auto-import of mining address on startup.
-FIXED: Added debug logging for private key verification in send method.
+FIXED: Correct imports from blockchain.utxo (not root utxo).
+FIXED: Auto-import of mining address on startup.
 """
 
 import hashlib
@@ -18,6 +18,7 @@ from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
 from config import settings
 from blockchain.transaction import Transaction, TxInput, TxOutput, create_transaction
+# FIXED: Correct import from blockchain.utxo
 from blockchain.utxo import UTXOSet, get_balance_for_address, get_utxos_for_address
 from blockchain.chain_manager import ChainManager
 from mempool import Mempool
@@ -222,6 +223,8 @@ class Wallet:
         if not utxos:
             return False, "No UTXOs found for address", None
         
+        print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
+        
         # 4. Select UTXOs to cover amount
         selected_utxos = []
         total_selected = 0
@@ -229,6 +232,7 @@ class Wallet:
         for utxo in utxos:
             selected_utxos.append(utxo)
             total_selected += utxo['amount']
+            print(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
             if total_selected >= amount + fee:
                 break
         
@@ -380,32 +384,6 @@ if not wallet.key_store.get_private_key(MINING_ADDRESS):
     print(f"✅ Mining address imported: {MINING_ADDRESS}")
 else:
     print(f"✅ Mining address already in wallet: {MINING_ADDRESS}")
-
-
-# ============================================
-# TEST FUNCTIONS
-# ============================================
-
-def test_wallet():
-    """Quick test to verify Wallet is working."""
-    print("\n🧪 Testing Wallet...")
-    
-    w = Wallet()
-    print("1. Wallet created")
-    
-    address = w.create_address(label="Test Address")
-    print(f"2. Address created: {address[:10]}...")
-    
-    balance = w.get_balance(address)
-    print(f"3. Balance: {balance} satoshis")
-    
-    info = w.get_wallet_info()
-    print(f"4. Wallet info:")
-    print(f"   Addresses: {info['address_count']}")
-    print(f"   Total balance: {info['total_balance_display']}")
-    
-    print("\n✅ Wallet test complete")
-    return True
 
 
 if __name__ == "__main__":

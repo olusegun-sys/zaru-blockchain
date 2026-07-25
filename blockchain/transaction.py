@@ -4,8 +4,7 @@ ZARU Transaction Module
 Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
-BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
-FIXED: Fixed signature verification by ensuring consistent data.
+FIXED: Complete rewrite of signing and verification logic (Bitcoin-style).
 """
 
 import hashlib
@@ -23,15 +22,11 @@ from config import settings
 
 @dataclass
 class TxInput:
-    """
-    Transaction Input
-    References a previous transaction output (UTXO)
-    """
+    """Transaction Input - References a UTXO."""
     tx_id: str
     output_index: int
     signature: Optional[bytes] = None
     pub_key: Optional[bytes] = None
-    _signed_data_hash: Optional[str] = None  # Store signed data hash for verification
     
     @validator('output_index')
     def validate_index(cls, v):
@@ -55,17 +50,11 @@ class TxInput:
             signature=bytes.fromhex(data['signature']) if data.get('signature') else None,
             pub_key=bytes.fromhex(data['pub_key']) if data.get('pub_key') else None,
         )
-    
-    def serialize(self) -> bytes:
-        return f"{self.tx_id}:{self.output_index}".encode()
 
 
 @dataclass
 class TxOutput:
-    """
-    Transaction Output
-    Contains the amount and the recipient's address
-    """
+    """Transaction Output - Creates a UTXO."""
     amount: int
     address: str
     
@@ -96,9 +85,7 @@ class TxOutput:
 
 
 class Transaction(BaseModel):
-    """
-    ZARU Transaction with BURN MECHANISM.
-    """
+    """ZARU Transaction with BURN MECHANISM."""
     
     tx_id: str = ""
     version: int = 1
@@ -117,12 +104,14 @@ class Transaction(BaseModel):
             self.tx_id = self.compute_id()
     
     def compute_id(self) -> str:
+        """Compute transaction ID (double SHA-256)."""
         data = self.serialize()
         hash1 = hashlib.sha256(data).digest()
         hash2 = hashlib.sha256(hash1).digest()
         return hash2.hex()
     
     def serialize(self) -> bytes:
+        """Serialize transaction to JSON bytes."""
         tx_data = {
             'version': self.version,
             'lock_time': self.lock_time,
@@ -134,13 +123,13 @@ class Transaction(BaseModel):
         json_str = json.dumps(tx_data, sort_keys=True, separators=(',', ':'))
         return json_str.encode()
     
-    def get_signature_data(self, input_index: int) -> bytes:
+    def get_signing_data(self) -> bytes:
         """
-        Get the data to sign for a specific input.
+        Get the data to sign for the entire transaction (Bitcoin-style).
         
-        FIXED: Ensures consistent data for signing and verification.
+        FIXED: Uses the same data for all inputs.
         """
-        # Build the transaction data WITHOUT signatures
+        # Build transaction data without signatures
         tx_data = {
             'version': self.version,
             'lock_time': self.lock_time,
@@ -150,41 +139,29 @@ class Transaction(BaseModel):
             'is_coinbase': self.is_coinbase,
         }
         
-        # Add all inputs with their pub_keys (but without signatures)
-        for i, inp in enumerate(self.inputs):
-            if i == input_index:
-                # Include the pub_key for the input being signed
-                tx_data['inputs'].append({
-                    'tx_id': inp.tx_id,
-                    'output_index': inp.output_index,
-                    'pub_key': inp.pub_key.hex() if inp.pub_key else None,
-                })
-            else:
-                # Include other inputs without pub_key
-                tx_data['inputs'].append({
-                    'tx_id': inp.tx_id,
-                    'output_index': inp.output_index,
-                })
+        # Add all inputs (without signatures)
+        for inp in self.inputs:
+            tx_data['inputs'].append({
+                'tx_id': inp.tx_id,
+                'output_index': inp.output_index,
+            })
         
         json_str = json.dumps(tx_data, sort_keys=True, separators=(',', ':'))
         return json_str.encode()
     
-    def sign_input(self, input_index: int, private_key: bytes) -> bool:
+    def sign(self, private_key: bytes) -> bool:
         """
-        Sign a specific input with a private key.
+        Sign the entire transaction with a private key.
         
-        FIXED: Stores the signed data hash for verification.
+        FIXED: Signs the entire transaction (Bitcoin-style).
         """
-        if input_index >= len(self.inputs):
-            print(f"❌ sign_input: input_index {input_index} out of range")
-            return False
-        
         try:
             from ecdsa import SigningKey, SECP256k1
+            import hashlib
             
             # Get the data to sign
-            data = self.get_signature_data(input_index)
-            print(f"🔍 sign_input: data_len={len(data)}")
+            data = self.get_signing_data()
+            print(f"🔍 sign: data_len={len(data)}")
             
             # Create signing key
             sk = SigningKey.from_string(private_key, curve=SECP256k1)
@@ -192,75 +169,81 @@ class Transaction(BaseModel):
             pub_key = vk.to_string()
             
             # Verify the private key generates the correct address
-            import hashlib
             hash1 = hashlib.sha256(pub_key).digest()
             hash2 = hashlib.sha256(hash1).digest()
             computed_address = hash2.hex()[:40]
-            print(f"🔍 sign_input: computed_address={computed_address}")
+            print(f"🔍 sign: computed_address={computed_address}")
             
             # Sign the data
             signature = sk.sign(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
             
-            # Store signature and public key
-            self.inputs[input_index].signature = signature
-            self.inputs[input_index].pub_key = pub_key
+            # Store signature and public key in ALL inputs
+            for inp in self.inputs:
+                inp.signature = signature
+                inp.pub_key = pub_key
             
-            print(f"✅ sign_input: success, sig_len={len(signature)}")
+            print(f"✅ sign: success, sig_len={len(signature)}")
             return True
             
         except Exception as e:
-            print(f"❌ sign_input: error={e}")
+            print(f"❌ sign: error={e}")
             import traceback
             traceback.print_exc()
             return False
     
-    def verify_input(self, input_index: int) -> bool:
+    def verify(self) -> bool:
         """
-        Verify a specific input's signature.
+        Verify the entire transaction's signature.
         
-        FIXED: Uses the same data format for verification as signing.
+        FIXED: Verifies the entire transaction.
         """
-        if input_index >= len(self.inputs):
+        if self.is_coinbase:
+            return True
+        
+        if not self.inputs:
+            print(f"❌ verify: no inputs")
             return False
         
-        inp = self.inputs[input_index]
-        if not inp.signature or not inp.pub_key:
-            print(f"❌ verify_input: missing signature or pub_key for input {input_index}")
+        # Check all inputs have the same signature and pub_key
+        first_sig = self.inputs[0].signature
+        first_pub = self.inputs[0].pub_key
+        
+        if not first_sig or not first_pub:
+            print(f"❌ verify: missing signature or pub_key")
             return False
+        
+        # Verify all inputs have the same signature
+        for inp in self.inputs:
+            if inp.signature != first_sig or inp.pub_key != first_pub:
+                print(f"❌ verify: inconsistent signatures")
+                return False
         
         try:
-            # Get the data that was signed (using the same method)
-            data = self.get_signature_data(input_index)
-            print(f"🔍 verify_input: data_len={len(data)}")
+            # Get the data that was signed
+            data = self.get_signing_data()
+            print(f"🔍 verify: data_len={len(data)}")
             
             # Verify the signature
-            vk = VerifyingKey.from_string(inp.pub_key, curve=SECP256k1)
-            result = vk.verify(inp.signature, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
-            print(f"🔍 verify_input: verification result={result}")
+            vk = VerifyingKey.from_string(first_pub, curve=SECP256k1)
+            result = vk.verify(first_sig, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
+            print(f"🔍 verify: result={result}")
             
             if result:
-                print(f"✅ verify_input: signature valid for input {input_index}")
+                print(f"✅ verify: signature valid")
             else:
-                print(f"❌ verify_input: signature invalid for input {input_index}")
+                print(f"❌ verify: signature invalid")
             
             return result
             
         except Exception as e:
-            print(f"❌ verify_input: error={e}")
+            print(f"❌ verify: error={e}")
             import traceback
             traceback.print_exc()
             return False
     
     def verify_all_inputs(self) -> bool:
-        if self.is_coinbase:
-            return True
-        
-        for i in range(len(self.inputs)):
-            print(f"🔍 verify_all_inputs: checking input {i}")
-            if not self.verify_input(i):
-                print(f"❌ verify_all_inputs: input {i} verification failed")
-                return False
-        return True
+        """Alias for verify()."""
+        return self.verify()
     
     def get_total_input(self) -> int:
         return 0
@@ -273,14 +256,14 @@ class Transaction(BaseModel):
     
     def is_valid(self, utxo_set: Optional[Dict[str, Dict[int, int]]] = None) -> Tuple[bool, str]:
         """
-        Comprehensive transaction validation with BURN MECHANISM.
+        Comprehensive transaction validation.
         """
-        # 1. Check transaction ID matches computed ID
+        # 1. Check transaction ID
         computed_id = self.compute_id()
         if self.tx_id != computed_id:
             return False, f"Invalid tx_id: computed {computed_id}, stored {self.tx_id}"
         
-        # 2. Coinbase transactions are special
+        # 2. Coinbase transactions
         if self.is_coinbase:
             if self.inputs:
                 return False, "Coinbase transaction must have no inputs"
@@ -289,7 +272,6 @@ class Transaction(BaseModel):
             MAX_COINBASE_REWARD = getattr(settings, 'MAX_COINBASE_REWARD', 5_000_000_000)
             if self.outputs[0].amount > MAX_COINBASE_REWARD:
                 return False, f"Coinbase amount ({self.outputs[0].amount}) exceeds max reward ({MAX_COINBASE_REWARD})"
-            print(f"✅ Coinbase validated: {self.outputs[0].amount} satoshis to {self.outputs[0].address[:10]}...")
             return True, "Valid coinbase transaction"
         
         # 3. Check inputs exist
@@ -300,8 +282,8 @@ class Transaction(BaseModel):
         if not self.outputs:
             return False, "Transaction must have at least one output"
         
-        # 5. Check all signatures
-        if not self.verify_all_inputs():
+        # 5. Verify signatures
+        if not self.verify():
             return False, "Invalid signature(s)"
         
         # 6. Check UTXO existence and amounts
@@ -377,7 +359,7 @@ class Transaction(BaseModel):
 
 
 def create_coinbase_transaction(address: str, amount: int) -> Transaction:
-    """Create a coinbase transaction (mining reward)"""
+    """Create a coinbase transaction."""
     tx = Transaction(
         is_coinbase=True,
         inputs=[],
@@ -388,18 +370,16 @@ def create_coinbase_transaction(address: str, amount: int) -> Transaction:
 
 
 def create_transaction(inputs: List[TxInput], outputs: List[TxOutput], private_key: bytes) -> Optional[Transaction]:
-    """Create and sign a new transaction"""
+    """Create and sign a new transaction."""
     try:
         print(f"🔍 create_transaction: {len(inputs)} inputs, {len(outputs)} outputs")
         
         tx = Transaction(inputs=inputs, outputs=outputs)
         
-        # Sign each input with the private key
-        for i in range(len(inputs)):
-            print(f"🔍 create_transaction: signing input {i}")
-            if not tx.sign_input(i, private_key):
-                print(f"❌ create_transaction: failed to sign input {i}")
-                return None
+        # Sign the entire transaction
+        if not tx.sign(private_key):
+            print(f"❌ create_transaction: failed to sign")
+            return None
         
         # Recompute tx_id after signing
         tx.tx_id = tx.compute_id()

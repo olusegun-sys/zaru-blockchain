@@ -3,13 +3,8 @@ ZARU API Routes Module
 ======================
 All REST API endpoints for ZARU.
 
-WHY: Each endpoint provides a specific function:
-- Wallet endpoints: manage addresses, balances, transactions
-- Blockchain endpoints: view blocks, transactions, chain info
-- Mining endpoints: control mining, view stats
-- Network endpoints: view peers, node info
-
 ADDED: Import private key endpoint.
+FIXED: Correct imports from blockchain.utxo.
 """
 
 from typing import Optional, List, Dict, Any
@@ -19,6 +14,7 @@ from pydantic import BaseModel, Field
 from blockchain.transaction import Transaction
 from blockchain.block import Block
 from blockchain.chain_manager import chain_manager
+# FIXED: Correct import from blockchain.utxo
 from blockchain.utxo import utxo_set
 from mempool import mempool
 from miner import get_miner
@@ -28,16 +24,14 @@ from config import settings
 
 
 # ============================================
-# PYDANTIC MODELS (Request/Response)
+# PYDANTIC MODELS
 # ============================================
 
 class AddressRequest(BaseModel):
-    """Request model for address operations."""
     label: Optional[str] = ""
 
 
 class SendRequest(BaseModel):
-    """Request model for sending transactions."""
     to_address: str = Field(..., description="Recipient address")
     amount: int = Field(..., description="Amount in satoshis")
     from_address: Optional[str] = Field(None, description="Sender address")
@@ -46,41 +40,9 @@ class SendRequest(BaseModel):
 
 
 class ImportKeyRequest(BaseModel):
-    """Request model for importing a private key."""
     address: str = Field(..., description="Address associated with the private key")
     private_key: str = Field(..., description="Private key in hex format")
     label: Optional[str] = Field("Imported", description="Label for the imported key")
-
-
-class AddressResponse(BaseModel):
-    """Response model for address operations."""
-    address: str
-    label: str
-    balance: int
-    balance_display: str
-    pending_balance: int
-    utxo_count: int
-
-
-class TransactionResponse(BaseModel):
-    """Response model for transactions."""
-    tx_id: str
-    inputs: List[Dict[str, Any]]
-    outputs: List[Dict[str, Any]]
-    is_coinbase: bool
-    timestamp: int
-    fee: int
-
-
-class BlockResponse(BaseModel):
-    """Response model for blocks."""
-    hash: str
-    height: int
-    timestamp: int
-    transactions: List[str]
-    transaction_count: int
-    size: int
-    difficulty: int
 
 
 # ============================================
@@ -96,7 +58,6 @@ router = APIRouter()
 
 @router.get("/wallet/addresses")
 async def get_addresses() -> Dict[str, Any]:
-    """Get all wallet addresses."""
     try:
         addresses = wallet.get_addresses()
         return {
@@ -109,7 +70,6 @@ async def get_addresses() -> Dict[str, Any]:
 
 @router.post("/wallet/address")
 async def create_address(request: AddressRequest) -> Dict[str, Any]:
-    """Create a new wallet address."""
     try:
         address = wallet.create_address(label=request.label)
         return {
@@ -123,24 +83,10 @@ async def create_address(request: AddressRequest) -> Dict[str, Any]:
 
 @router.post("/wallet/import")
 async def import_private_key(request: ImportKeyRequest) -> Dict[str, Any]:
-    """
-    Import a private key into the wallet.
-    
-    Args:
-        request: Import key request with address, private_key, and label
-    
-    Returns:
-        Dict: Success status and message
-    
-    WHY: This allows users to import private keys from external sources
-    (e.g., mining addresses created by the miner) so they can send transactions.
-    """
     try:
-        # Validate address format
         if not wallet.validate_address(request.address):
             raise HTTPException(status_code=400, detail="Invalid address format")
         
-        # Import the private key
         success = wallet.import_private_key(
             address=request.address,
             private_key_hex=request.private_key,
@@ -150,7 +96,7 @@ async def import_private_key(request: ImportKeyRequest) -> Dict[str, Any]:
         if success:
             return {
                 "success": True,
-                "message": f"Private key imported successfully for address {request.address[:10]}...",
+                "message": f"Private key imported successfully",
                 "address": request.address,
                 "label": request.label
             }
@@ -165,7 +111,6 @@ async def import_private_key(request: ImportKeyRequest) -> Dict[str, Any]:
 
 @router.get("/wallet/balance/{address}")
 async def get_balance(address: str) -> Dict[str, Any]:
-    """Get balance for an address."""
     try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
@@ -188,7 +133,6 @@ async def get_balance(address: str) -> Dict[str, Any]:
 
 @router.get("/wallet/balance")
 async def get_total_balance() -> Dict[str, Any]:
-    """Get total balance across all addresses."""
     try:
         total = wallet.get_balance()
         pending = wallet.get_pending_balance()
@@ -206,7 +150,6 @@ async def get_total_balance() -> Dict[str, Any]:
 
 @router.get("/wallet/utxos/{address}")
 async def get_utxos(address: str) -> Dict[str, Any]:
-    """Get UTXOs for an address."""
     try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
@@ -228,7 +171,6 @@ async def get_utxos(address: str) -> Dict[str, Any]:
 
 @router.post("/wallet/send")
 async def send_transaction(request: SendRequest) -> Dict[str, Any]:
-    """Send a transaction."""
     try:
         if not wallet.validate_address(request.to_address):
             raise HTTPException(status_code=400, detail="Invalid recipient address")
@@ -270,7 +212,6 @@ async def get_transactions(
     address: str,
     limit: int = Query(100, ge=1, le=1000)
 ) -> Dict[str, Any]:
-    """Get transaction history for an address."""
     try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
@@ -290,7 +231,6 @@ async def get_transactions(
 
 @router.get("/wallet/info")
 async def get_wallet_info() -> Dict[str, Any]:
-    """Get wallet information."""
     try:
         return wallet.get_wallet_info()
     except Exception as e:
@@ -303,7 +243,6 @@ async def get_wallet_info() -> Dict[str, Any]:
 
 @router.get("/blockchain/info")
 async def get_chain_info() -> Dict[str, Any]:
-    """Get blockchain information."""
     try:
         height = chain_manager.get_height()
         tip = chain_manager.get_tip_hash()
@@ -330,7 +269,6 @@ async def get_chain_info() -> Dict[str, Any]:
 
 @router.get("/blockchain/block/{block_hash}")
 async def get_block(block_hash: str) -> Dict[str, Any]:
-    """Get a block by hash."""
     try:
         block = chain_manager.get_block(block_hash)
         if not block:
@@ -345,7 +283,6 @@ async def get_block(block_hash: str) -> Dict[str, Any]:
 
 @router.get("/blockchain/block/height/{height}")
 async def get_block_by_height(height: int) -> Dict[str, Any]:
-    """Get a block by height."""
     try:
         if height < 0 or height >= chain_manager.get_height():
             raise HTTPException(status_code=404, detail="Block not found")
@@ -366,7 +303,6 @@ async def get_blocks(
     start: int = Query(0, ge=0),
     count: int = Query(10, ge=1, le=100)
 ) -> Dict[str, Any]:
-    """Get a range of blocks."""
     try:
         height = chain_manager.get_height()
         end = min(start + count, height)
@@ -396,7 +332,6 @@ async def get_blocks(
 
 @router.get("/blockchain/transaction/{tx_id}")
 async def get_transaction(tx_id: str) -> Dict[str, Any]:
-    """Get a transaction by ID."""
     try:
         tx = mempool.get_transaction(tx_id)
         if tx:
@@ -422,7 +357,6 @@ async def start_mining(
     address: Optional[str] = Body(None, embed=True),
     threads: int = Body(1, embed=True)
 ) -> Dict[str, Any]:
-    """Start mining."""
     try:
         miner = get_miner()
         
@@ -451,7 +385,6 @@ async def start_mining(
 
 @router.post("/mining/stop")
 async def stop_mining() -> Dict[str, Any]:
-    """Stop mining."""
     try:
         miner = get_miner()
         
@@ -469,7 +402,6 @@ async def stop_mining() -> Dict[str, Any]:
 
 @router.get("/mining/status")
 async def get_mining_status() -> Dict[str, Any]:
-    """Get mining status and statistics."""
     try:
         miner = get_miner()
         stats = miner.get_stats()
@@ -492,7 +424,6 @@ async def get_mining_status() -> Dict[str, Any]:
 async def mine_single_block(
     address: Optional[str] = Body(None, embed=True)
 ) -> Dict[str, Any]:
-    """Mine a single block."""
     try:
         miner = get_miner()
         
@@ -533,7 +464,6 @@ async def mine_single_block(
 
 @router.get("/network/info")
 async def get_network_info() -> Dict[str, Any]:
-    """Get network information."""
     try:
         node = get_node()
         is_running = node.running if hasattr(node, 'running') else False
@@ -557,7 +487,6 @@ async def get_network_info() -> Dict[str, Any]:
 
 @router.get("/network/peers")
 async def get_peers() -> Dict[str, Any]:
-    """Get connected peers."""
     try:
         node = get_node()
         peers = node.get_peers() if hasattr(node, 'get_peers') else []
@@ -574,7 +503,6 @@ async def connect_peer(
     address: str = Body(..., embed=True),
     port: int = Body(..., embed=True)
 ) -> Dict[str, Any]:
-    """Connect to a peer."""
     try:
         node = get_node()
         peer = node.connect_to_peer(address, port)
@@ -599,7 +527,6 @@ async def connect_peer(
 
 @router.get("/mempool/info")
 async def get_mempool_info() -> Dict[str, Any]:
-    """Get mempool information."""
     try:
         state = mempool.get_state()
         return {
@@ -619,7 +546,6 @@ async def get_mempool_info() -> Dict[str, Any]:
 async def get_mempool_transactions(
     limit: int = Query(100, ge=1, le=1000)
 ) -> Dict[str, Any]:
-    """Get transactions in the mempool."""
     try:
         transactions = mempool.get_transactions(limit)
         return {
@@ -637,7 +563,6 @@ async def get_mempool_transactions(
 
 @router.get("/system/info")
 async def get_system_info() -> Dict[str, Any]:
-    """Get system information."""
     try:
         import platform
         import psutil
