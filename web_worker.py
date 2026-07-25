@@ -6,9 +6,9 @@ Runs as a web service with Flask to keep the miner alive.
 Render pings /health every few minutes, which keeps the service awake.
 The miner runs in a background thread while Flask handles requests.
 
-FIXED: Uses the wallet's first address for mining.
+FIXED: Force mining to the specific wallet address with 403 ZARU.
+All mined coins will go to: 1f6254f2f4dfb787262f6b3e18d482a77cd6a979
 ADDED: Export private key endpoint and send endpoint.
-All mined coins will go to the wallet address displayed in the UI.
 """
 
 import os
@@ -80,14 +80,9 @@ def start_mining_route():
     global mining_active, mining_address
     if not mining_active:
         try:
-            # Use the wallet's first address
-            addresses = wallet.get_addresses()
-            if addresses:
-                mining_address = addresses[0]
-                logger.info(f"📝 Using existing wallet address: {mining_address}")
-            else:
-                mining_address = wallet.create_address(label="Render_Web_Miner")
-                logger.info(f"📝 Created new wallet address: {mining_address}")
+            # FORCE: Use the specific wallet address with 403 ZARU
+            mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+            logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
             
             miner.set_mining_address(mining_address)
             miner.start_mining(continuous=True, num_threads=2)
@@ -286,17 +281,10 @@ if __name__ == "__main__":
     logger.info(f"   Python: {sys.version}")
     logger.info(f"   Working Dir: {os.getcwd()}")
     
-    # Use the wallet's first address for mining
-    addresses = wallet.get_addresses()
-    
-    if addresses:
-        mining_address = addresses[0]
-        logger.info(f"📝 Using existing wallet address: {mining_address}")
-    else:
-        mining_address = wallet.create_address(label="Render_Web_Miner")
-        logger.info(f"📝 Created new wallet address: {mining_address}")
-    
-    logger.info(f"💰 MINING REWARDS WILL GO TO: {mining_address}")
+    # FORCE: Use the specific wallet address with 403 ZARU
+    mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+    logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
+    logger.info(f"📍 This address has 403.5 ZARU")
     logger.info(f"🔑 Private key is stored in the miner's key store")
     logger.info(f"📤 Use /export_private_key to get the private key")
     logger.info(f"📤 Use /send_to to send ZARU from the mining address")
