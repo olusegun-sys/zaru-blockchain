@@ -11,7 +11,7 @@ It allows users to:
 3. Send transactions
 4. Receive transactions
 
-FIXED: Address cache is explicitly updated when creating a new address.
+FIXED: Added import_private_key() to import external private keys.
 """
 
 import hashlib
@@ -40,6 +40,7 @@ class Wallet:
     - Balance checking
     - Transaction creation and signing
     - Transaction history
+    - Import private keys
     """
     
     def __init__(
@@ -85,9 +86,6 @@ class Wallet:
         
         Returns:
             str: New address (public key hash)
-        
-        WHY: Users need new addresses to receive payments.
-        Each address has a unique private key.
         """
         # Generate private key
         sk = SigningKey.generate(curve=SECP256k1)
@@ -103,7 +101,7 @@ class Wallet:
         # Store private key in key store (saves to disk)
         self.key_store.add_key(address, private_key, label)
         
-        # FIXED: Explicitly update the address cache with the new address
+        # Explicitly update the address cache with the new address
         self._address_cache[address] = {
             'public_key': pub_key.hex(),
             'label': label,
@@ -113,6 +111,46 @@ class Wallet:
         print(f"✅ Address created: {address[:10]}... ({label or 'no label'})")
         print(f"   Total addresses: {len(self.key_store)}")
         return address
+    
+    def import_private_key(self, address: str, private_key_hex: str, label: str = "Imported") -> bool:
+        """
+        Import a private key into the wallet.
+        
+        Args:
+            address: Address associated with the private key
+            private_key_hex: Private key in hex format
+            label: Label for the imported key
+        
+        Returns:
+            bool: True if imported successfully
+        
+        WHY: This allows users to import private keys from external sources
+        (e.g., mining addresses created by the miner) so they can send transactions.
+        """
+        try:
+            # Convert hex to bytes
+            private_key = bytes.fromhex(private_key_hex)
+            
+            # Add the key to the key store
+            self.key_store.add_key(address, private_key, label)
+            
+            # Update the address cache
+            self._address_cache[address] = {
+                'label': label,
+                'imported': True,
+                'created_at': time.time()
+            }
+            
+            print(f"✅ Private key imported for address: {address[:10]}... ({label})")
+            print(f"   Total addresses: {len(self.key_store)}")
+            return True
+            
+        except ValueError as e:
+            print(f"❌ Invalid private key hex: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ Failed to import private key: {e}")
+            return False
     
     def get_addresses(self) -> List[str]:
         """Get all addresses in the wallet."""
@@ -163,8 +201,6 @@ class Wallet:
         
         Returns:
             int: Balance in satoshis
-        
-        WHY: Users need to know how much money they have.
         """
         if address:
             return get_balance_for_address(address)
@@ -184,9 +220,6 @@ class Wallet:
         
         Returns:
             int: Pending balance in satoshis
-        
-        WHY: Transactions in the mempool are not yet confirmed.
-        Users should see pending transactions separately.
         """
         if address:
             return self.mempool.get_pending_balance(address)
@@ -256,12 +289,6 @@ class Wallet:
         
         Returns:
             Tuple[bool, str, Optional[Transaction]]: (success, message, transaction)
-        
-        WHY: This is the main function for sending money.
-        It handles all the complexity of selecting UTXOs and signing.
-        
-        THINK OF IT LIKE: Writing a check. You specify the recipient,
-        amount, and your account. The wallet handles the rest.
         """
         # 1. Find a sender address
         if from_address:
@@ -276,7 +303,7 @@ class Wallet:
         # 2. Get private key for sender
         private_key = self.key_store.get_private_key(sender)
         if not private_key:
-            return False, "Private key not found for address", None
+            return False, f"Private key not found for address {sender[:10]}...", None
         
         # 3. Get UTXOs for the sender
         utxos = get_utxos_for_address(sender)
@@ -394,11 +421,8 @@ class Wallet:
         
         Returns:
             List[Dict]: Transaction history
-        
-        WHY: Users need to see their transaction history.
         """
         # TODO: Implement transaction history from database
-        # For now, return empty list
         return []
     
     # ============================================
@@ -414,8 +438,6 @@ class Wallet:
         
         Returns:
             bool: True if address is valid
-        
-        WHY: Prevent sending to invalid addresses.
         """
         # Check length
         if len(address) != 40:
@@ -486,7 +508,7 @@ class Wallet:
         
         return {
             'address_count': len(addresses),
-            'addresses': addresses[:10],  # Show first 10
+            'addresses': addresses[:10],
             'total_balance': total_balance,
             'pending_balance': pending_balance,
             'total_balance_display': f"{total_balance / 100_000_000:.8f} ZARU",
@@ -505,10 +527,7 @@ class Wallet:
         
         Returns:
             str: 12-word seed phrase
-        
-        WHY: Seed phrases are a human-readable way to backup wallets.
         """
-        # TODO: Implement BIP39 mnemonic generation
         return "TODO: Implement mnemonic generation"
     
     def restore_from_mnemonic(self, mnemonic: str) -> bool:
@@ -520,10 +539,7 @@ class Wallet:
         
         Returns:
             bool: True if restored
-        
-        WHY: Users can restore their wallet from a seed phrase.
         """
-        # TODO: Implement BIP39 restoration
         return False
 
 
@@ -531,7 +547,6 @@ class Wallet:
 # GLOBAL INSTANCE
 # ============================================
 
-# Create a global wallet instance
 wallet = Wallet()
 
 
@@ -540,24 +555,18 @@ wallet = Wallet()
 # ============================================
 
 def test_wallet():
-    """
-    Quick test to verify Wallet is working.
-    """
+    """Quick test to verify Wallet is working."""
     print("\n🧪 Testing Wallet...")
     
-    # 1. Create wallet
     w = Wallet()
     print("1. Wallet created")
     
-    # 2. Create address
     address = w.create_address(label="Test Address")
     print(f"2. Address created: {address[:10]}...")
     
-    # 3. Get balance
     balance = w.get_balance(address)
     print(f"3. Balance: {balance} satoshis")
     
-    # 4. Get wallet info
     info = w.get_wallet_info()
     print(f"4. Wallet info:")
     print(f"   Addresses: {info['address_count']}")

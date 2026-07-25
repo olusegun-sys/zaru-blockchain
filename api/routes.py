@@ -9,7 +9,7 @@ WHY: Each endpoint provides a specific function:
 - Mining endpoints: control mining, view stats
 - Network endpoints: view peers, node info
 
-THINK OF IT LIKE: A restaurant menu. Each endpoint is a dish you can order.
+ADDED: Import private key endpoint.
 """
 
 from typing import Optional, List, Dict, Any
@@ -21,7 +21,7 @@ from blockchain.block import Block
 from blockchain.chain_manager import chain_manager
 from blockchain.utxo import utxo_set
 from mempool import mempool
-from miner import get_miner  # Changed: use factory function
+from miner import get_miner
 from wallet import wallet
 from network import get_node
 from config import settings
@@ -43,6 +43,13 @@ class SendRequest(BaseModel):
     from_address: Optional[str] = Field(None, description="Sender address")
     fee: Optional[int] = Field(0, description="Transaction fee in satoshis")
     memo: Optional[str] = Field("", description="Optional memo")
+
+
+class ImportKeyRequest(BaseModel):
+    """Request model for importing a private key."""
+    address: str = Field(..., description="Address associated with the private key")
+    private_key: str = Field(..., description="Private key in hex format")
+    label: Optional[str] = Field("Imported", description="Label for the imported key")
 
 
 class AddressResponse(BaseModel):
@@ -89,12 +96,7 @@ router = APIRouter()
 
 @router.get("/wallet/addresses")
 async def get_addresses() -> Dict[str, Any]:
-    """
-    Get all wallet addresses.
-    
-    Returns:
-        Dict: List of addresses and total count
-    """
+    """Get all wallet addresses."""
     try:
         addresses = wallet.get_addresses()
         return {
@@ -107,15 +109,7 @@ async def get_addresses() -> Dict[str, Any]:
 
 @router.post("/wallet/address")
 async def create_address(request: AddressRequest) -> Dict[str, Any]:
-    """
-    Create a new wallet address.
-    
-    Args:
-        request: Address creation request
-    
-    Returns:
-        Dict: New address and info
-    """
+    """Create a new wallet address."""
     try:
         address = wallet.create_address(label=request.label)
         return {
@@ -127,19 +121,52 @@ async def create_address(request: AddressRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/wallet/balance/{address}")
-async def get_balance(address: str) -> Dict[str, Any]:
+@router.post("/wallet/import")
+async def import_private_key(request: ImportKeyRequest) -> Dict[str, Any]:
     """
-    Get balance for an address.
+    Import a private key into the wallet.
     
     Args:
-        address: Address to check
+        request: Import key request with address, private_key, and label
     
     Returns:
-        Dict: Balance information
+        Dict: Success status and message
+    
+    WHY: This allows users to import private keys from external sources
+    (e.g., mining addresses created by the miner) so they can send transactions.
     """
     try:
-        # Validate address
+        # Validate address format
+        if not wallet.validate_address(request.address):
+            raise HTTPException(status_code=400, detail="Invalid address format")
+        
+        # Import the private key
+        success = wallet.import_private_key(
+            address=request.address,
+            private_key_hex=request.private_key,
+            label=request.label
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Private key imported successfully for address {request.address[:10]}...",
+                "address": request.address,
+                "label": request.label
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to import private key")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/wallet/balance/{address}")
+async def get_balance(address: str) -> Dict[str, Any]:
+    """Get balance for an address."""
+    try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
         
@@ -161,12 +188,7 @@ async def get_balance(address: str) -> Dict[str, Any]:
 
 @router.get("/wallet/balance")
 async def get_total_balance() -> Dict[str, Any]:
-    """
-    Get total balance across all addresses.
-    
-    Returns:
-        Dict: Total balance information
-    """
+    """Get total balance across all addresses."""
     try:
         total = wallet.get_balance()
         pending = wallet.get_pending_balance()
@@ -184,15 +206,7 @@ async def get_total_balance() -> Dict[str, Any]:
 
 @router.get("/wallet/utxos/{address}")
 async def get_utxos(address: str) -> Dict[str, Any]:
-    """
-    Get UTXOs for an address.
-    
-    Args:
-        address: Address to get UTXOs for
-    
-    Returns:
-        Dict: List of UTXOs
-    """
+    """Get UTXOs for an address."""
     try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
@@ -214,17 +228,8 @@ async def get_utxos(address: str) -> Dict[str, Any]:
 
 @router.post("/wallet/send")
 async def send_transaction(request: SendRequest) -> Dict[str, Any]:
-    """
-    Send a transaction.
-    
-    Args:
-        request: Transaction request
-    
-    Returns:
-        Dict: Transaction result
-    """
+    """Send a transaction."""
     try:
-        # Validate address
         if not wallet.validate_address(request.to_address):
             raise HTTPException(status_code=400, detail="Invalid recipient address")
         
@@ -234,7 +239,6 @@ async def send_transaction(request: SendRequest) -> Dict[str, Any]:
         if request.amount <= 0:
             raise HTTPException(status_code=400, detail="Amount must be positive")
         
-        # Send transaction
         success, message, tx = wallet.send(
             to_address=request.to_address,
             amount=request.amount,
@@ -266,16 +270,7 @@ async def get_transactions(
     address: str,
     limit: int = Query(100, ge=1, le=1000)
 ) -> Dict[str, Any]:
-    """
-    Get transaction history for an address.
-    
-    Args:
-        address: Address to get history for
-        limit: Maximum number of transactions
-    
-    Returns:
-        Dict: Transaction history
-    """
+    """Get transaction history for an address."""
     try:
         if not wallet.validate_address(address):
             raise HTTPException(status_code=400, detail="Invalid address format")
@@ -295,12 +290,7 @@ async def get_transactions(
 
 @router.get("/wallet/info")
 async def get_wallet_info() -> Dict[str, Any]:
-    """
-    Get wallet information.
-    
-    Returns:
-        Dict: Wallet information
-    """
+    """Get wallet information."""
     try:
         return wallet.get_wallet_info()
     except Exception as e:
@@ -313,19 +303,13 @@ async def get_wallet_info() -> Dict[str, Any]:
 
 @router.get("/blockchain/info")
 async def get_chain_info() -> Dict[str, Any]:
-    """
-    Get blockchain information.
-    
-    Returns:
-        Dict: Chain information
-    """
+    """Get blockchain information."""
     try:
         height = chain_manager.get_height()
         tip = chain_manager.get_tip_hash()
         difficulty = chain_manager.get_difficulty()
         utxo_count = utxo_set.get_utxo_count()
         
-        # Get latest block
         latest = chain_manager.get_block_by_height(height - 1) if height > 0 else None
         
         return {
@@ -346,15 +330,7 @@ async def get_chain_info() -> Dict[str, Any]:
 
 @router.get("/blockchain/block/{block_hash}")
 async def get_block(block_hash: str) -> Dict[str, Any]:
-    """
-    Get a block by hash.
-    
-    Args:
-        block_hash: Block hash
-    
-    Returns:
-        Dict: Block data
-    """
+    """Get a block by hash."""
     try:
         block = chain_manager.get_block(block_hash)
         if not block:
@@ -369,15 +345,7 @@ async def get_block(block_hash: str) -> Dict[str, Any]:
 
 @router.get("/blockchain/block/height/{height}")
 async def get_block_by_height(height: int) -> Dict[str, Any]:
-    """
-    Get a block by height.
-    
-    Args:
-        height: Block height
-    
-    Returns:
-        Dict: Block data
-    """
+    """Get a block by height."""
     try:
         if height < 0 or height >= chain_manager.get_height():
             raise HTTPException(status_code=404, detail="Block not found")
@@ -398,16 +366,7 @@ async def get_blocks(
     start: int = Query(0, ge=0),
     count: int = Query(10, ge=1, le=100)
 ) -> Dict[str, Any]:
-    """
-    Get a range of blocks.
-    
-    Args:
-        start: Starting height
-        count: Number of blocks
-    
-    Returns:
-        Dict: List of blocks
-    """
+    """Get a range of blocks."""
     try:
         height = chain_manager.get_height()
         end = min(start + count, height)
@@ -437,17 +396,8 @@ async def get_blocks(
 
 @router.get("/blockchain/transaction/{tx_id}")
 async def get_transaction(tx_id: str) -> Dict[str, Any]:
-    """
-    Get a transaction by ID.
-    
-    Args:
-        tx_id: Transaction ID
-    
-    Returns:
-        Dict: Transaction data
-    """
+    """Get a transaction by ID."""
     try:
-        # Try to get from mempool first
         tx = mempool.get_transaction(tx_id)
         if tx:
             return {
@@ -456,8 +406,6 @@ async def get_transaction(tx_id: str) -> Dict[str, Any]:
                 "confirmed": False
             }
         
-        # TODO: Search in blockchain
-        # For now, return not found
         raise HTTPException(status_code=404, detail="Transaction not found")
     except HTTPException:
         raise
@@ -466,7 +414,7 @@ async def get_transaction(tx_id: str) -> Dict[str, Any]:
 
 
 # ============================================
-# MINING ENDPOINTS - FIXED with get_miner()
+# MINING ENDPOINTS
 # ============================================
 
 @router.post("/mining/start")
@@ -474,18 +422,8 @@ async def start_mining(
     address: Optional[str] = Body(None, embed=True),
     threads: int = Body(1, embed=True)
 ) -> Dict[str, Any]:
-    """
-    Start mining.
-    
-    Args:
-        address: Mining reward address
-        threads: Number of threads
-    
-    Returns:
-        Dict: Mining status
-    """
+    """Start mining."""
     try:
-        # Get a fresh miner instance with the coinbase fix
         miner = get_miner()
         
         if address:
@@ -513,14 +451,8 @@ async def start_mining(
 
 @router.post("/mining/stop")
 async def stop_mining() -> Dict[str, Any]:
-    """
-    Stop mining.
-    
-    Returns:
-        Dict: Mining status
-    """
+    """Stop mining."""
     try:
-        # Get a fresh miner instance
         miner = get_miner()
         
         if not miner.is_mining:
@@ -537,14 +469,8 @@ async def stop_mining() -> Dict[str, Any]:
 
 @router.get("/mining/status")
 async def get_mining_status() -> Dict[str, Any]:
-    """
-    Get mining status and statistics.
-    
-    Returns:
-        Dict: Mining status
-    """
+    """Get mining status and statistics."""
     try:
-        # Get a fresh miner instance
         miner = get_miner()
         stats = miner.get_stats()
         return {
@@ -566,17 +492,8 @@ async def get_mining_status() -> Dict[str, Any]:
 async def mine_single_block(
     address: Optional[str] = Body(None, embed=True)
 ) -> Dict[str, Any]:
-    """
-    Mine a single block.
-    
-    Args:
-        address: Mining reward address
-    
-    Returns:
-        Dict: Mining result
-    """
+    """Mine a single block."""
     try:
-        # Get a fresh miner instance with the coinbase fix
         miner = get_miner()
         
         if address:
@@ -585,7 +502,6 @@ async def mine_single_block(
         if not miner.address:
             raise HTTPException(status_code=400, detail="Mining address not set")
         
-        # Mine a test block (with lower difficulty)
         block = miner.mine_test_block()
         
         if block:
@@ -617,12 +533,7 @@ async def mine_single_block(
 
 @router.get("/network/info")
 async def get_network_info() -> Dict[str, Any]:
-    """
-    Get network information.
-    
-    Returns:
-        Dict: Network information
-    """
+    """Get network information."""
     try:
         node = get_node()
         is_running = node.running if hasattr(node, 'running') else False
@@ -646,12 +557,7 @@ async def get_network_info() -> Dict[str, Any]:
 
 @router.get("/network/peers")
 async def get_peers() -> Dict[str, Any]:
-    """
-    Get connected peers.
-    
-    Returns:
-        Dict: List of peers
-    """
+    """Get connected peers."""
     try:
         node = get_node()
         peers = node.get_peers() if hasattr(node, 'get_peers') else []
@@ -668,16 +574,7 @@ async def connect_peer(
     address: str = Body(..., embed=True),
     port: int = Body(..., embed=True)
 ) -> Dict[str, Any]:
-    """
-    Connect to a peer.
-    
-    Args:
-        address: Peer address
-        port: Peer port
-    
-    Returns:
-        Dict: Connection result
-    """
+    """Connect to a peer."""
     try:
         node = get_node()
         peer = node.connect_to_peer(address, port)
@@ -702,12 +599,7 @@ async def connect_peer(
 
 @router.get("/mempool/info")
 async def get_mempool_info() -> Dict[str, Any]:
-    """
-    Get mempool information.
-    
-    Returns:
-        Dict: Mempool information
-    """
+    """Get mempool information."""
     try:
         state = mempool.get_state()
         return {
@@ -727,15 +619,7 @@ async def get_mempool_info() -> Dict[str, Any]:
 async def get_mempool_transactions(
     limit: int = Query(100, ge=1, le=1000)
 ) -> Dict[str, Any]:
-    """
-    Get transactions in the mempool.
-    
-    Args:
-        limit: Maximum number of transactions
-    
-    Returns:
-        Dict: List of transactions
-    """
+    """Get transactions in the mempool."""
     try:
         transactions = mempool.get_transactions(limit)
         return {
@@ -753,12 +637,7 @@ async def get_mempool_transactions(
 
 @router.get("/system/info")
 async def get_system_info() -> Dict[str, Any]:
-    """
-    Get system information.
-    
-    Returns:
-        Dict: System information
-    """
+    """Get system information."""
     try:
         import platform
         import psutil
