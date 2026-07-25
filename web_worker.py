@@ -6,8 +6,7 @@ Runs as a web service with Flask to keep the miner alive.
 Render pings /health every few minutes, which keeps the service awake.
 The miner runs in a background thread while Flask handles requests.
 
-FIXED: Force mining to the specific wallet address.
-All mined coins will go to: 1f6254f2f4dfb787262f6b3e18d482a77cd6a979
+FIXED: Uses PostgreSQL to sync with the API database.
 """
 
 import os
@@ -16,6 +15,9 @@ import time
 import threading
 import logging
 from datetime import datetime
+
+# Force PostgreSQL for the miner
+os.environ["ZARU_DB_BACKEND"] = "postgresql"
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -84,7 +86,6 @@ def start_mining_route():
             miner.start_mining(continuous=True, num_threads=2)
             mining_active = True
             logger.info(f"✅ Mining started with address: {mining_address}")
-            logger.info(f"💰 All rewards will go to: {mining_address}")
             return jsonify({"status": "started", "address": mining_address})
         except Exception as e:
             logger.error(f"❌ Failed to start mining: {e}")
@@ -135,16 +136,16 @@ if __name__ == "__main__":
     logger.info(f"   Time: {datetime.now().isoformat()}")
     logger.info(f"   Python: {sys.version}")
     logger.info(f"   Working Dir: {os.getcwd()}")
+    logger.info(f"   Database Backend: {os.getenv('ZARU_DB_BACKEND', 'SQLite')}")
     
     # FORCE: Use the specific wallet address
     mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
     logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
-    logger.info(f"📍 This address MUST match your wallet address")
     
     # Set the mining address
     miner.set_mining_address(mining_address)
     
-    # Start mining with 2 threads (balanced for Render free tier)
+    # Start mining with 2 threads
     miner.start_mining(continuous=True, num_threads=2)
     mining_active = True
     
@@ -152,9 +153,9 @@ if __name__ == "__main__":
     logger.info(f"   Address: {mining_address}")
     logger.info(f"   Threads: 2")
     logger.info(f"   Mode: Continuous")
-    logger.info(f"💰 All mining rewards will go to: {mining_address}")
+    logger.info(f"   Database: PostgreSQL (shared with API)")
     
-    # Run Flask web server for health checks
+    # Run Flask web server
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🌐 Starting Flask server on port {port}")
     logger.info("=" * 60)
