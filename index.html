@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>ZARU Wallet v2.0</title>
+    <title>ZARU Wallet</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:Arial,sans-serif;background:#0a0e1a;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px;color:#fff}
@@ -52,7 +52,6 @@
         .debug{margin-top:15px;padding:10px;background:rgba(0,0,0,0.3);border-radius:8px;font-size:11px;color:#555;word-break:break-all}
         .debug span{color:#666}
         .subtitle{text-align:center;font-size:14px;color:#888;margin-bottom:20px}
-        .subtitle .version{font-size:10px;color:#666;margin-left:8px}
         @media(max-width:480px){.container{padding:18px}.balance .amt{font-size:30px}.addr-row code{font-size:11px}}
     </style>
 </head>
@@ -63,10 +62,7 @@
     <div class="container">
 
         <h1>ZARU <span>Wallet</span></h1>
-        <div class="subtitle">
-            Digital money for the real world
-            <span class="version">v2.0</span>
-        </div>
+        <div class="subtitle">Digital money for the real world</div>
 
         <div style="text-align:center;">
             <span class="status-badge loading" id="statusBadge">● Connecting...</span>
@@ -117,8 +113,8 @@
 
     <script>
         // ============================================
-        // ZARU WALLET v2.0 — FIXED PERSISTENCE
-        // ALWAYS USE THE NEWEST ADDRESS ON PAGE LOAD
+        // ZARU WALLET — FIXED PERSISTENCE
+        // API-FIRST with localStorage fallback
         // ============================================
 
         var API = 'https://zaru-api.onrender.com';
@@ -210,18 +206,10 @@
                 if (apiAddresses.length > 0) {
                     // Update our local state with the API data
                     addresses = apiAddresses;
-                    
-                    // FIXED: Use the saved current address if it exists, otherwise use the newest
-                    var savedCurrent = localStorage.getItem('zaru_current_address');
-                    
-                    // If we have a saved current address and it's still in the list, use it
-                    if (savedCurrent && addresses.includes(savedCurrent)) {
-                        currentAddress = savedCurrent;
-                    } else {
-                        // Otherwise, use the last address (newest) or first if only one
-                        currentAddress = addresses[addresses.length - 1];
+                    // If currentAddress is not in the list, use the first one
+                    if (!currentAddress || !addresses.includes(currentAddress)) {
+                        currentAddress = addresses[0];
                     }
-                    
                     // Save the latest data to localStorage
                     saveAddresses();
                 } else {
@@ -277,7 +265,6 @@
                 if (data.address) {
                     // Add the new address to our list
                     addresses.push(data.address);
-                    // FIXED: Always set the new address as the current one
                     currentAddress = data.address;
                     // Save to localStorage
                     saveAddresses();
@@ -420,10 +407,8 @@
             load();
         });
 
-        console.log('🔐 ZARU Wallet v2.0 loaded');
+        console.log('🔐 ZARU Wallet loaded (API-first with localStorage)');
         console.log('📡 API:', API);
-        console.log('💡 Newest address persists across browser refreshes');
-        console.log('📍 Current address:', currentAddress);
     </script>
 
 </body>
