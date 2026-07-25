@@ -4,6 +4,7 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
+FIXED: Added auto-import of mining address on startup.
 FIXED: Added debug logging for private key verification in send method.
 """
 
@@ -361,6 +362,50 @@ class Wallet:
 # ============================================
 
 wallet = Wallet()
+
+
+# ============================================
+# AUTO-IMPORT MINING ADDRESS ON STARTUP
+# ============================================
+# This ensures the mining address is always available in the wallet
+# even after restarts.
+
+MINING_ADDRESS = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+MINING_PRIVATE_KEY = "c6c66aadd49e821506e3a383beae816b87e5edd37ddb6cb14ee9dbc46e0125dd"
+
+# Check if the key exists, if not import it
+if not wallet.key_store.get_private_key(MINING_ADDRESS):
+    print(f"🔑 Auto-importing mining address private key...")
+    wallet.import_private_key(MINING_ADDRESS, MINING_PRIVATE_KEY, "Mining Address")
+    print(f"✅ Mining address imported: {MINING_ADDRESS}")
+else:
+    print(f"✅ Mining address already in wallet: {MINING_ADDRESS}")
+
+
+# ============================================
+# TEST FUNCTIONS
+# ============================================
+
+def test_wallet():
+    """Quick test to verify Wallet is working."""
+    print("\n🧪 Testing Wallet...")
+    
+    w = Wallet()
+    print("1. Wallet created")
+    
+    address = w.create_address(label="Test Address")
+    print(f"2. Address created: {address[:10]}...")
+    
+    balance = w.get_balance(address)
+    print(f"3. Balance: {balance} satoshis")
+    
+    info = w.get_wallet_info()
+    print(f"4. Wallet info:")
+    print(f"   Addresses: {info['address_count']}")
+    print(f"   Total balance: {info['total_balance_display']}")
+    
+    print("\n✅ Wallet test complete")
+    return True
 
 
 if __name__ == "__main__":
