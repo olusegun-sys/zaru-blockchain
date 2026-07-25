@@ -2,36 +2,72 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>ZARU Wallet</title>
+    <title>ZARU Wallet v2.1</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:Arial,sans-serif;background:#0a0e1a;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px;color:#fff}
-        .container{background:#1a1f35;border-radius:20px;padding:30px;max-width:500px;width:100%;border:1px solid rgba(100,200,255,0.1)}
-        h1{text-align:center;font-size:28px;margin-bottom:20px;color:#fff}
+        .container{background:#1a1f35;border-radius:20px;padding:30px;max-width:550px;width:100%;border:1px solid rgba(100,200,255,0.1)}
+        h1{text-align:center;font-size:28px;margin-bottom:5px;color:#fff}
         h1 span{color:#4fc3f7}
+        .subtitle{text-align:center;font-size:14px;color:#888;margin-bottom:20px}
+        .subtitle .version{font-size:10px;color:#666;margin-left:8px}
+        
+        /* ─── Address List ─── */
+        .address-list-section{margin-bottom:20px}
+        .address-list-section h3{font-size:14px;color:#888;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px}
+        .address-list{max-height:180px;overflow-y:auto}
+        .address-item{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,0,0,0.2);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:all 0.2s;border:2px solid transparent}
+        .address-item:hover{background:rgba(79,195,247,0.08)}
+        .address-item.active{border-color:#4fc3f7;background:rgba(79,195,247,0.08)}
+        .address-item .addr-left{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+        .address-item .addr-label{font-size:13px;font-weight:600;color:#e0e0e0}
+        .address-item .addr-hash{font-size:11px;color:#666;font-family:monospace;word-break:break-all}
+        .address-item .addr-right{text-align:right;flex-shrink:0;margin-left:10px}
+        .address-item .addr-balance{font-size:14px;font-weight:700;color:#4fc3f7}
+        .address-item .addr-balance.zero{color:#555}
+        .address-item .addr-badge{font-size:9px;padding:2px 8px;border-radius:10px;background:rgba(79,195,247,0.15);color:#4fc3f7;display:inline-block;margin-top:2px}
+        
+        /* ─── Scrollbar ─── */
+        .address-list::-webkit-scrollbar{width:4px}
+        .address-list::-webkit-scrollbar-track{background:transparent}
+        .address-list::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
+        
+        /* ─── Address Display ─── */
         .addr{background:rgba(0,0,0,0.3);border-radius:12px;padding:15px;margin-bottom:20px}
         .addr label{font-size:11px;color:#888;display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
         .addr-row{display:flex;gap:10px;align-items:center;word-break:break-all}
         .addr-row code{color:#4fc3f7;background:rgba(79,195,247,0.08);padding:8px 12px;border-radius:8px;flex:1;font-family:monospace;font-size:13px}
         .addr-row button{background:rgba(79,195,247,0.12);border:none;color:#4fc3f7;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:16px;transition:background 0.2s}
         .addr-row button:hover{background:rgba(79,195,247,0.25)}
+        
+        /* ─── Balance ─── */
         .balance{text-align:center;padding:20px;background:rgba(79,195,247,0.08);border-radius:12px;margin-bottom:20px}
         .balance .amt{font-size:44px;font-weight:bold;color:#fff}
         .balance .amt span{font-size:22px;color:#4fc3f7}
         .balance .label{font-size:13px;color:#888;margin-top:4px}
         .balance .details{display:flex;justify-content:center;gap:30px;margin-top:8px;font-size:13px;color:#666}
         .balance .details strong{color:#e0e0e0}
+        
+        /* ─── Buttons ─── */
         .btn{width:100%;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px;transition:all 0.3s}
         .btn-primary{background:linear-gradient(135deg,#4fc3f7,#2196f3);color:#fff}
         .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(79,195,247,0.3)}
+        .btn-secondary{background:rgba(255,255,255,0.08);color:#e0e0e0;border:1px solid rgba(255,255,255,0.05)}
+        .btn-secondary:hover{background:rgba(255,255,255,0.15)}
         .btn-success{background:linear-gradient(135deg,#66bb6a,#43a047);color:#fff}
         .btn-success:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(76,175,80,0.3)}
+        .btn-row{display:flex;gap:10px}
+        .btn-row .btn{flex:1}
+        
+        /* ─── Send ─── */
         .send{background:rgba(0,0,0,0.2);border-radius:12px;padding:18px;margin-top:18px;border:1px solid rgba(255,255,255,0.05)}
         .send h3{font-size:15px;margin-bottom:12px;color:#e0e0e0}
         .send label{display:block;font-size:12px;color:#888;margin-bottom:4px}
         .send input{width:100%;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.3);color:#fff;font-size:14px;margin-bottom:12px;outline:none}
         .send input:focus{border-color:#4fc3f7}
         .send input::placeholder{color:#555}
+        
+        /* ─── History ─── */
         .history{margin-top:18px;border-top:1px solid rgba(255,255,255,0.05);padding-top:18px}
         .history h3{font-size:15px;margin-bottom:12px;color:#e0e0e0}
         .tx{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:rgba(0,0,0,0.2);border-radius:8px;margin-bottom:6px;font-size:13px}
@@ -39,20 +75,26 @@
         .tx .received{color:#66bb6a}
         .tx .tx-id{color:#555;font-size:11px;font-family:monospace}
         .no-tx{color:#444;text-align:center;padding:20px;font-size:14px}
+        
+        /* ─── Status ─── */
         .status-badge{display:inline-block;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;margin-top:6px}
         .status-badge.online{background:rgba(76,175,80,0.2);color:#4caf50;border:1px solid rgba(76,175,80,0.3)}
         .status-badge.offline{background:rgba(244,67,54,0.2);color:#f44336;border:1px solid rgba(244,67,54,0.3)}
         .status-badge.loading{background:rgba(255,193,7,0.2);color:#ffc107;border:1px solid rgba(255,193,7,0.3)}
+        
+        /* ─── Toast ─── */
         .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.95);padding:12px 24px;border-radius:10px;display:none;z-index:999;max-width:90%;border:1px solid rgba(255,255,255,0.08);font-size:14px;color:#fff}
         .toast.show{display:block;animation:slideUp 0.3s ease}
         .toast.success{border-color:#4caf50}
         .toast.error{border-color:#f44336}
         .toast.info{border-color:#4fc3f7}
         @keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        
+        /* ─── Debug ─── */
         .debug{margin-top:15px;padding:10px;background:rgba(0,0,0,0.3);border-radius:8px;font-size:11px;color:#555;word-break:break-all}
         .debug span{color:#666}
-        .subtitle{text-align:center;font-size:14px;color:#888;margin-bottom:20px}
-        @media(max-width:480px){.container{padding:18px}.balance .amt{font-size:30px}.addr-row code{font-size:11px}}
+        
+        @media(max-width:480px){.container{padding:18px}.balance .amt{font-size:30px}.addr-row code{font-size:11px}.address-item{flex-wrap:wrap}.address-item .addr-right{margin-left:0;margin-top:4px;width:100%;text-align:left}}
     </style>
 </head>
 <body>
@@ -62,14 +104,30 @@
     <div class="container">
 
         <h1>ZARU <span>Wallet</span></h1>
-        <div class="subtitle">Digital money for the real world</div>
+        <div class="subtitle">
+            Digital money for the real world
+            <span class="version">v2.1</span>
+        </div>
 
         <div style="text-align:center;">
             <span class="status-badge loading" id="statusBadge">● Connecting...</span>
         </div>
 
+        <!-- ========================================= -->
+        <!-- ADDRESS LIST                              -->
+        <!-- ========================================= -->
+        <div class="address-list-section">
+            <h3>📋 Your Addresses</h3>
+            <div class="address-list" id="addressList">
+                <div style="color:#555;text-align:center;padding:15px;font-size:13px;">Loading addresses...</div>
+            </div>
+        </div>
+
+        <!-- ========================================= -->
+        <!-- CURRENT ADDRESS                           -->
+        <!-- ========================================= -->
         <div class="addr">
-            <label>Your Address</label>
+            <label>Current Address</label>
             <div class="addr-row">
                 <code id="addressDisplay">Loading...</code>
                 <button onclick="copyAddress()" title="Copy address">📋</button>
@@ -77,6 +135,9 @@
             </div>
         </div>
 
+        <!-- ========================================= -->
+        <!-- BALANCE                                  -->
+        <!-- ========================================= -->
         <div class="balance">
             <div class="amt" id="balanceDisplay">0 <span>ZARU</span></div>
             <div class="label">Available Balance</div>
@@ -86,8 +147,17 @@
             </div>
         </div>
 
-        <button class="btn btn-primary" onclick="refresh()">🔄 Refresh</button>
+        <!-- ========================================= -->
+        <!-- BUTTONS                                  -->
+        <!-- ========================================= -->
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="refresh()">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="createAddress()">➕ New Address</button>
+        </div>
 
+        <!-- ========================================= -->
+        <!-- SEND                                     -->
+        <!-- ========================================= -->
         <div class="send">
             <h3>💸 Send ZARU</h3>
             <label>Recipient Address</label>
@@ -97,6 +167,9 @@
             <button class="btn btn-success" onclick="send()">Send ZARU</button>
         </div>
 
+        <!-- ========================================= -->
+        <!-- TRANSACTION HISTORY                      -->
+        <!-- ========================================= -->
         <div class="history">
             <h3>📜 Transactions</h3>
             <div id="transactionHistory">
@@ -104,6 +177,9 @@
             </div>
         </div>
 
+        <!-- ========================================= -->
+        <!-- DEBUG                                    -->
+        <!-- ========================================= -->
         <div class="debug">
             API: <span id="debugApi">https://zaru-api.onrender.com</span><br>
             Status: <span id="debugStatus">Loading...</span>
@@ -113,13 +189,15 @@
 
     <script>
         // ============================================
-        // ZARU WALLET — FIXED PERSISTENCE
-        // API-FIRST with localStorage fallback
+        // ZARU WALLET v2.1 — ADDRESS MANAGEMENT
+        // FORCE MINING ADDRESS AS DEFAULT
         // ============================================
 
         var API = 'https://zaru-api.onrender.com';
+        var MINING_ADDRESS = '1f6254f2f4dfb787262f6b3e18d482a77cd6a979';
         var currentAddress = '';
         var addresses = [];
+        var addressBalances = {};
         var balance = 0;
         var pending = 0;
 
@@ -191,52 +269,147 @@
             return false;
         }
 
+        // ── Get Balance for a Specific Address ──
+        async function getAddressBalance(address) {
+            try {
+                var data = await call('/wallet/balance/' + address);
+                return data.confirmed || 0;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        // ── Render Address List ──
+        async function renderAddressList() {
+            var container = document.getElementById('addressList');
+            
+            if (!addresses || addresses.length === 0) {
+                container.innerHTML = '<div style="color:#555;text-align:center;padding:15px;font-size:13px;">No addresses yet. Create one!</div>';
+                return;
+            }
+
+            var html = '';
+            for (var i = 0; i < addresses.length; i++) {
+                var addr = addresses[i];
+                var bal = addressBalances[addr] || 0;
+                var isActive = (addr === currentAddress);
+                var balanceDisplay = (bal / 100000000).toFixed(8);
+                var isZero = (bal === 0);
+                
+                // Label: Mining address detection (hardcoded)
+                var label = '';
+                if (addr === MINING_ADDRESS) {
+                    label = '⛏️ Mining';
+                } else if (i === 0 && bal > 0) {
+                    label = '💰 Main';
+                } else if (bal > 0) {
+                    label = '💰 Funded';
+                } else {
+                    label = '📭 Empty';
+                }
+
+                html += `
+                    <div class="address-item ${isActive ? 'active' : ''}" onclick="selectAddress('${addr}')">
+                        <div class="addr-left">
+                            <div class="addr-label">${label}</div>
+                            <div class="addr-hash">${addr.slice(0, 12)}...${addr.slice(-8)}</div>
+                        </div>
+                        <div class="addr-right">
+                            <div class="addr-balance ${isZero ? 'zero' : ''}">${balanceDisplay} ZARU</div>
+                            ${isActive ? '<div class="addr-badge">✓ Active</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+
+        // ── Select an Address ──
+        async function selectAddress(address) {
+            if (address === currentAddress) return;
+            
+            currentAddress = address;
+            localStorage.setItem('zaru_current_address', address);
+            document.getElementById('addressDisplay').textContent = currentAddress;
+            
+            await refreshBalance();
+            await refreshTxs();
+            await renderAddressList();
+            
+            toast('Switched to address: ' + address.slice(0, 10) + '...', 'info');
+        }
+
+        // ── Load Address Balances ──
+        async function loadAddressBalances() {
+            addressBalances = {};
+            for (var i = 0; i < addresses.length; i++) {
+                var addr = addresses[i];
+                addressBalances[addr] = await getAddressBalance(addr);
+            }
+        }
+
         // ── Load Wallet ──
         async function load() {
             setStatus('loading', '● Connecting...');
             try {
-                // ALWAYS fetch from API first
                 await call('/health');
                 setStatus('online', '● Online');
 
-                // Fetch the latest addresses from the API
+                // Fetch addresses from API
                 var data = await call('/wallet/addresses');
                 var apiAddresses = data.addresses || [];
 
                 if (apiAddresses.length > 0) {
-                    // Update our local state with the API data
                     addresses = apiAddresses;
-                    // If currentAddress is not in the list, use the first one
-                    if (!currentAddress || !addresses.includes(currentAddress)) {
-                        currentAddress = addresses[0];
+                    
+                    // FORCE: Use mining address if it exists
+                    if (addresses.includes(MINING_ADDRESS)) {
+                        currentAddress = MINING_ADDRESS;
+                        console.log('✅ FORCED to mining address:', currentAddress);
+                    } else {
+                        // Fallback: use saved current address or first
+                        var savedCurrent = localStorage.getItem('zaru_current_address');
+                        if (savedCurrent && addresses.includes(savedCurrent)) {
+                            currentAddress = savedCurrent;
+                        } else {
+                            currentAddress = addresses[0];
+                        }
                     }
-                    // Save the latest data to localStorage
+                    
                     saveAddresses();
                 } else {
-                    // If API returns empty, try localStorage
+                    // If no addresses, try localStorage
                     var hasSaved = loadSavedAddresses();
                     if (!hasSaved || addresses.length === 0) {
-                        // If no addresses anywhere, create one
                         await createAddress();
                         return;
                     }
                 }
 
-                // Display the address
+                // Load balances for all addresses
+                await loadAddressBalances();
+
+                // Display the current address
                 document.getElementById('addressDisplay').textContent = currentAddress;
                 await refreshBalance();
                 await refreshTxs();
+                await renderAddressList();
 
                 document.getElementById('debugStatus').textContent = '✅ Connected';
                 document.getElementById('debugStatus').style.color = '#4caf50';
             } catch (e) {
                 console.error('API error, falling back to localStorage:', e);
-                // API failed — fallback to localStorage
                 var hasSaved = loadSavedAddresses();
                 if (hasSaved && addresses.length > 0) {
+                    // FORCE: Use mining address if available
+                    if (addresses.includes(MINING_ADDRESS)) {
+                        currentAddress = MINING_ADDRESS;
+                    }
                     document.getElementById('addressDisplay').textContent = currentAddress;
                     await refreshBalance();
                     await refreshTxs();
+                    await renderAddressList();
                     document.getElementById('debugStatus').textContent = '⚠️ Offline (cached)';
                     document.getElementById('debugStatus').style.color = '#ffc107';
                     toast('Using cached data (API unavailable)', 'info');
@@ -263,15 +436,18 @@
                     label: 'Wallet ' + (addresses.length + 1)
                 });
                 if (data.address) {
-                    // Add the new address to our list
                     addresses.push(data.address);
+                    // FIXED: Always set the new address as the current one
                     currentAddress = data.address;
-                    // Save to localStorage
                     saveAddresses();
-                    // Update the display
+                    
+                    // Get balance for the new address
+                    addressBalances[currentAddress] = 0;
+                    
                     document.getElementById('addressDisplay').textContent = currentAddress;
                     await refreshBalance();
                     await refreshTxs();
+                    await renderAddressList();
                     toast('✅ New address created!', 'success');
                 }
             } catch (e) {
@@ -287,6 +463,11 @@
                 var data = await call('/wallet/balance/' + currentAddress);
                 balance = data.confirmed || 0;
                 pending = data.pending || 0;
+                
+                // Also refresh the address list to update balances
+                addressBalances[currentAddress] = balance;
+                await renderAddressList();
+                
                 updateBalance();
             } catch (e) {
                 console.error(e);
@@ -391,8 +572,14 @@
                     toast('✅ Sent ' + amtZARU + ' ZARU!', 'success');
                     document.getElementById('sendTo').value = '';
                     document.getElementById('sendAmount').value = '';
+                    
+                    // Refresh the current address balance
                     await refreshBalance();
                     await refreshTxs();
+                    
+                    // Also refresh the address list
+                    await loadAddressBalances();
+                    await renderAddressList();
                 } else {
                     toast('❌ Failed: ' + data.message, 'error');
                 }
@@ -407,8 +594,11 @@
             load();
         });
 
-        console.log('🔐 ZARU Wallet loaded (API-first with localStorage)');
+        console.log('🔐 ZARU Wallet v2.1 loaded');
         console.log('📡 API:', API);
+        console.log('📍 Mining Address:', MINING_ADDRESS);
+        console.log('💡 Click an address in the list to switch');
+        console.log('💡 Forced mining address as default');
     </script>
 
 </body>
