@@ -5,7 +5,7 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
-FIXED: Coinbase validation uses MAX_COINBASE_REWARD from config.
+FIXED: Added debug logging to sign_input for troubleshooting.
 """
 
 import hashlib
@@ -160,6 +160,11 @@ class Transaction(BaseModel):
         return json_str.encode()
     
     def sign_input(self, input_index: int, private_key: bytes) -> bool:
+        """
+        Sign a specific input with a private key.
+        
+        FIXED: Added debug logging to troubleshoot signature issues.
+        """
         if input_index >= len(self.inputs):
             return False
         
@@ -167,13 +172,33 @@ class Transaction(BaseModel):
         
         try:
             sk = SigningKey.from_string(private_key, curve=SECP256k1)
-            signature = sk.sign(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
-            self.inputs[input_index].signature = signature
             vk = sk.get_verifying_key()
-            self.inputs[input_index].pub_key = vk.to_string()
+            pub_key = vk.to_string()
+            
+            # DEBUG: Verify the private key generates the correct address
+            import hashlib
+            hash1 = hashlib.sha256(pub_key).digest()
+            hash2 = hashlib.sha256(hash1).digest()
+            computed_address = hash2.hex()[:40]
+            
+            print(f"🔍 Signing input {input_index}")
+            print(f"   Data length: {len(data)} bytes")
+            print(f"   Computed address: {computed_address}")
+            
+            # Sign the data
+            signature = sk.sign(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
+            
+            # Store signature and public key
+            self.inputs[input_index].signature = signature
+            self.inputs[input_index].pub_key = pub_key
+            
+            print(f"✅ Signature created successfully")
             return True
+            
         except Exception as e:
-            print(f"Error signing input {input_index}: {e}")
+            print(f"❌ Error signing input {input_index}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def verify_input(self, input_index: int) -> bool:
@@ -335,12 +360,18 @@ def create_transaction(inputs: List[TxInput], outputs: List[TxOutput], private_k
     """Create and sign a new transaction"""
     try:
         tx = Transaction(inputs=inputs, outputs=outputs)
+        
+        # Sign each input with the private key
         for i in range(len(inputs)):
             if not tx.sign_input(i, private_key):
                 print(f"Failed to sign input {i}")
                 return None
+        
+        # Recompute tx_id after signing
         tx.tx_id = tx.compute_id()
         return tx
     except Exception as e:
         print(f"Error creating transaction: {e}")
+        import traceback
+        traceback.print_exc()
         return None
