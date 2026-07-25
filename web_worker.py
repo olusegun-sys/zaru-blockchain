@@ -8,6 +8,7 @@ The miner runs in a background thread while Flask handles requests.
 
 FIXED: Force PostgreSQL for database consistency.
 FIXED: Force mining address to 1f6254f2f4dfb787262f6b3e18d482a77cd6a979.
+FIXED: Auto-import private key on startup.
 ADDED: Export private key endpoint and send endpoint.
 """
 
@@ -52,6 +53,7 @@ logger = logging.getLogger(__name__)
 # ============================================
 
 MINING_ADDRESS = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+MINING_PRIVATE_KEY = "c6c66aadd49e821506e3a383beae816b87e5edd37ddb6cb14ee9dbc46e0125dd"
 
 # ============================================
 # FLASK APP
@@ -280,6 +282,17 @@ if __name__ == "__main__":
     logger.info(f"   Working Dir: {os.getcwd()}")
     logger.info(f"   Database Backend: {os.getenv('ZARU_DB_BACKEND', 'SQLite')}")
     logger.info(f"   DATABASE_URL: {os.getenv('DATABASE_URL', 'Not set')[:30]}...")
+    
+    # ============================================
+    # FORCE PRIVATE KEY IMPORT
+    # ============================================
+    # Check if the key exists, if not import it
+    if not wallet.key_store.get_private_key(MINING_ADDRESS):
+        logger.info(f"🔑 Private key not found for {MINING_ADDRESS[:10]}..., importing...")
+        wallet.import_private_key(MINING_ADDRESS, MINING_PRIVATE_KEY, "Mining Address")
+        logger.info(f"✅ Imported private key for {MINING_ADDRESS}")
+    else:
+        logger.info(f"✅ Private key already exists for {MINING_ADDRESS[:10]}...")
     
     logger.info(f"💰 MINING ADDRESS: {MINING_ADDRESS}")
     logger.info(f"📍 This address has {wallet.get_balance(MINING_ADDRESS)} satoshis")
