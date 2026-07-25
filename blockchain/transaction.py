@@ -5,7 +5,7 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 BURN MECHANISM: Every transaction burns 1% of fees to create scarcity.
-FIXED: Added debug logging to sign_input for troubleshooting.
+FIXED: Added extensive debug logging to sign_input for troubleshooting.
 """
 
 import hashlib
@@ -163,27 +163,30 @@ class Transaction(BaseModel):
         """
         Sign a specific input with a private key.
         
-        FIXED: Added debug logging to troubleshoot signature issues.
+        FIXED: Added extensive debug logging.
         """
         if input_index >= len(self.inputs):
+            print(f"❌ sign_input: input_index {input_index} out of range (max {len(self.inputs)-1})")
             return False
         
-        data = self.get_signature_data(input_index)
-        
         try:
+            from ecdsa import SigningKey, SECP256k1
+            import hashlib
+            
+            # Get the data to sign
+            data = self.get_signature_data(input_index)
+            print(f"🔍 sign_input: input_index={input_index}, data_len={len(data)}")
+            
+            # Create signing key
             sk = SigningKey.from_string(private_key, curve=SECP256k1)
             vk = sk.get_verifying_key()
             pub_key = vk.to_string()
             
-            # DEBUG: Verify the private key generates the correct address
-            import hashlib
+            # Verify the private key generates the correct address
             hash1 = hashlib.sha256(pub_key).digest()
             hash2 = hashlib.sha256(hash1).digest()
             computed_address = hash2.hex()[:40]
-            
-            print(f"🔍 Signing input {input_index}")
-            print(f"   Data length: {len(data)} bytes")
-            print(f"   Computed address: {computed_address}")
+            print(f"🔍 sign_input: computed_address={computed_address}")
             
             # Sign the data
             signature = sk.sign(data, hashfunc=hashlib.sha256, sigencode=sigencode_der)
@@ -192,11 +195,11 @@ class Transaction(BaseModel):
             self.inputs[input_index].signature = signature
             self.inputs[input_index].pub_key = pub_key
             
-            print(f"✅ Signature created successfully")
+            print(f"✅ sign_input: success, sig_len={len(signature)}")
             return True
             
         except Exception as e:
-            print(f"❌ Error signing input {input_index}: {e}")
+            print(f"❌ sign_input: error={e}")
             import traceback
             traceback.print_exc()
             return False
@@ -214,7 +217,7 @@ class Transaction(BaseModel):
             vk = VerifyingKey.from_string(inp.pub_key, curve=SECP256k1)
             return vk.verify(inp.signature, data, hashfunc=hashlib.sha256, sigdecode=sigdecode_der)
         except Exception as e:
-            print(f"Error verifying input {input_index}: {e}")
+            print(f"❌ verify_input: error={e}")
             return False
     
     def verify_all_inputs(self) -> bool:
@@ -223,6 +226,7 @@ class Transaction(BaseModel):
         
         for i in range(len(self.inputs)):
             if not self.verify_input(i):
+                print(f"❌ verify_all_inputs: input {i} verification failed")
                 return False
         return True
     
@@ -238,8 +242,6 @@ class Transaction(BaseModel):
     def is_valid(self, utxo_set: Optional[Dict[str, Dict[int, int]]] = None) -> Tuple[bool, str]:
         """
         Comprehensive transaction validation with BURN MECHANISM.
-        
-        FIXED: Coinbase validation uses MAX_COINBASE_REWARD from settings.
         """
         # 1. Check transaction ID matches computed ID
         computed_id = self.compute_id()
@@ -252,7 +254,6 @@ class Transaction(BaseModel):
                 return False, "Coinbase transaction must have no inputs"
             if len(self.outputs) != 1:
                 return False, "Coinbase transaction must have exactly one output"
-            # FIXED: Check against MAX_COINBASE_REWARD, not total supply
             MAX_COINBASE_REWARD = getattr(settings, 'MAX_COINBASE_REWARD', 5_000_000_000)
             if self.outputs[0].amount > MAX_COINBASE_REWARD:
                 return False, f"Coinbase amount ({self.outputs[0].amount}) exceeds max reward ({MAX_COINBASE_REWARD})"
@@ -294,11 +295,9 @@ class Transaction(BaseModel):
             if fee > 0 and fee < settings.MIN_RELAY_FEE:
                 return False, f"Fee ({fee}) below minimum relay fee ({settings.MIN_RELAY_FEE})"
             
-            # ============================================
-            # 🔥 BURN MECHANISM 🔥
-            # ============================================
+            # Burn mechanism
             if fee > 0:
-                burn_amount = fee // 100  # 1% burn
+                burn_amount = fee // 100
                 if burn_amount > 0:
                     burn_address = settings.BURN_ADDRESS
                     self.outputs.append(TxOutput(
@@ -359,19 +358,23 @@ def create_coinbase_transaction(address: str, amount: int) -> Transaction:
 def create_transaction(inputs: List[TxInput], outputs: List[TxOutput], private_key: bytes) -> Optional[Transaction]:
     """Create and sign a new transaction"""
     try:
+        print(f"🔍 create_transaction: {len(inputs)} inputs, {len(outputs)} outputs")
+        
         tx = Transaction(inputs=inputs, outputs=outputs)
         
         # Sign each input with the private key
         for i in range(len(inputs)):
+            print(f"🔍 create_transaction: signing input {i}")
             if not tx.sign_input(i, private_key):
-                print(f"Failed to sign input {i}")
+                print(f"❌ create_transaction: failed to sign input {i}")
                 return None
         
         # Recompute tx_id after signing
         tx.tx_id = tx.compute_id()
+        print(f"✅ create_transaction: success, tx_id={tx.tx_id[:16]}...")
         return tx
     except Exception as e:
-        print(f"Error creating transaction: {e}")
+        print(f"❌ create_transaction: error={e}")
         import traceback
         traceback.print_exc()
         return None
