@@ -6,8 +6,8 @@ Runs as a web service with Flask to keep the miner alive.
 Render pings /health every few minutes, which keeps the service awake.
 The miner runs in a background thread while Flask handles requests.
 
-FIXED: Uses the wallet's first address for mining instead of creating a new one.
-All mined coins will go to the wallet address displayed in the UI.
+FIXED: Force mining to the specific wallet address.
+All mined coins will go to: 1f6254f2f4dfb787262f6b3e18d482a77cd6a979
 """
 
 import os
@@ -76,19 +76,15 @@ def start_mining_route():
     global mining_active, mining_address
     if not mining_active:
         try:
-            # FIXED: Use the wallet's first address
-            addresses = wallet.get_addresses()
-            if addresses:
-                mining_address = addresses[0]
-                logger.info(f"📝 Using existing wallet address: {mining_address}")
-            else:
-                mining_address = wallet.create_address(label="Render_Web_Miner")
-                logger.info(f"📝 Created new wallet address: {mining_address}")
+            # FORCE: Use the specific wallet address
+            mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+            logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
             
             miner.set_mining_address(mining_address)
             miner.start_mining(continuous=True, num_threads=2)
             mining_active = True
             logger.info(f"✅ Mining started with address: {mining_address}")
+            logger.info(f"💰 All rewards will go to: {mining_address}")
             return jsonify({"status": "started", "address": mining_address})
         except Exception as e:
             logger.error(f"❌ Failed to start mining: {e}")
@@ -139,18 +135,11 @@ if __name__ == "__main__":
     logger.info(f"   Time: {datetime.now().isoformat()}")
     logger.info(f"   Python: {sys.version}")
     logger.info(f"   Working Dir: {os.getcwd()}")
-
-    # FIXED: Use the wallet's first address for mining
-    addresses = wallet.get_addresses()
     
-    if addresses:
-        mining_address = addresses[0]
-        logger.info(f"📝 Using existing wallet address: {mining_address}")
-    else:
-        mining_address = wallet.create_address(label="Render_Web_Miner")
-        logger.info(f"📝 Created new wallet address: {mining_address}")
-    
-    logger.info(f"💰 MINING REWARDS WILL GO TO: {mining_address}")
+    # FORCE: Use the specific wallet address
+    mining_address = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
+    logger.info(f"💰 FORCED MINING ADDRESS: {mining_address}")
+    logger.info(f"📍 This address MUST match your wallet address")
     
     # Set the mining address
     miner.set_mining_address(mining_address)
@@ -163,6 +152,7 @@ if __name__ == "__main__":
     logger.info(f"   Address: {mining_address}")
     logger.info(f"   Threads: 2")
     logger.info(f"   Mode: Continuous")
+    logger.info(f"💰 All mining rewards will go to: {mining_address}")
     
     # Run Flask web server for health checks
     port = int(os.environ.get("PORT", 5000))
