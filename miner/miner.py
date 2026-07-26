@@ -5,8 +5,9 @@ Handles Proof of Work mining and block creation.
 
 ADDED: Easy mode for bot mining (reduced difficulty)
 FIXED: Coinbase transaction properly added to all mined blocks
+FIXED: Mempool transactions now included in blocks
 FIXED: UnboundLocalError in mining_loop (block variable initialized)
-VERSION: 2.1 - With Mining Loop Fix
+VERSION: 2.2 - With Mempool Transaction Support
 """
 
 import time
@@ -78,7 +79,7 @@ class Miner:
             self.chain_manager._difficulty = settings.EASY_DIFFICULTY
             self.chain_manager.store.put_chain_state('difficulty', settings.EASY_DIFFICULTY)
         
-        print(f"✅ Miner initialized (VERSION 2.1 - MINING LOOP FIX)")
+        print(f"✅ Miner initialized (VERSION 2.2 - MEMPOOL SUPPORT)")
         print(f"   Address: {address or 'Not set - mining disabled'}")
         print(f"   Difficulty: {self.chain_manager.get_difficulty()}")
         print(f"   Mode: {'Easy' if easy_mode else 'Normal'}")
@@ -113,21 +114,29 @@ class Miner:
     # BLOCK CREATION
     # ============================================
     
-    def create_block_template(self) -> Optional[Block]:
-        """Create a candidate block for mining with coinbase."""
+    def create_block_template(self, max_tx_count: int = 100) -> Optional[Block]:
+        """
+        Create a candidate block for mining with coinbase AND mempool transactions.
+        
+        FIXED: Now properly includes mempool transactions in the block.
+        
+        Args:
+            max_tx_count: Maximum number of transactions to include from mempool
+        """
         if not self.address:
             print("❌ Mining address not set! Use set_mining_address()")
             return None
         
         # Get transactions from mempool
-        transactions = self.mempool.prepare_for_mining()
+        mempool_txs = self.mempool.get_transactions(max_tx_count)
+        print(f"📦 Retrieved {len(mempool_txs)} transactions from mempool")
         
         # Create coinbase transaction (mining reward)
         reward = 50_000_000  # 50 ZARU in satoshis
         coinbase = create_coinbase_transaction(self.address, reward)
         
-        # Add coinbase as first transaction
-        all_transactions = [coinbase] + transactions
+        # Add coinbase as first transaction, then mempool transactions
+        all_transactions = [coinbase] + mempool_txs
         
         # Get current chain state
         tip_hash = self.chain_manager.get_tip_hash()
@@ -144,7 +153,7 @@ class Miner:
             block_height=height
         )
         
-        # Add all transactions (including coinbase)
+        # Add all transactions (including coinbase and mempool)
         for tx in all_transactions:
             block.add_transaction(tx)
         
@@ -158,7 +167,7 @@ class Miner:
         
         print(f"📦 Block template created:")
         print(f"   Height: {height}")
-        print(f"   Transactions: {len(block.transactions)} (including coinbase)")
+        print(f"   Transactions: {len(block.transactions)} (1 coinbase + {len(mempool_txs)} from mempool)")
         print(f"   Difficulty: {difficulty}")
         print(f"   Reward: {reward} satoshis")
         
@@ -299,13 +308,14 @@ class Miner:
         success, message = self.chain_manager.add_block(block)
         
         if success:
+            # Remove confirmed transactions from mempool
             self.mempool.confirm_block(block)
             print(f"✅ Block {block.header.block_height} submitted to chain")
         
         return success, message
     
     # ============================================
-    # CONTINUOUS MINING - FIXED
+    # CONTINUOUS MINING
     # ============================================
     
     def start_mining(self, continuous: bool = True, num_threads: int = 1, block: Optional[Block] = None) -> None:
@@ -324,9 +334,9 @@ class Miner:
         def mining_loop():
             """Main mining loop - FIXED: block variable initialized."""
             print(f"🚀 Started mining (continuous={continuous}, easy={self.easy_mode})")
-            print(f"🔍 VERSION 2.1 - WITH MINING LOOP FIX")
+            print(f"🔍 VERSION 2.2 - WITH MEMPOOL SUPPORT")
             
-            current_block = block  # ← FIX: Use local variable initialized from argument
+            current_block = block
             
             while self.is_mining and not self.stop_event.is_set():
                 if not current_block:
@@ -416,17 +426,14 @@ class Miner:
         
         FIXED: Ensures coinbase transaction is added to the block.
         """
-        print("🔍 VERSION 2.1 - WITH MINING LOOP FIX (mine_test_block)")
+        print("🔍 VERSION 2.2 - WITH MEMPOOL SUPPORT (mine_test_block)")
         
         if difficulty is None:
             difficulty = settings.EASY_DIFFICULTY
         
         # Get transactions from mempool
-        transactions = []
-        try:
-            transactions = self.mempool.get_transactions(10)
-        except:
-            pass
+        mempool_txs = self.mempool.get_transactions(10)
+        print(f"📦 Retrieved {len(mempool_txs)} transactions from mempool")
         
         # Create coinbase transaction (mining reward)
         reward = 50_000_000  # 50 ZARU
@@ -437,8 +444,8 @@ class Miner:
         print(f"🔍 Created coinbase: {coinbase.tx_id[:16]}... for {self.address or 'TEST_MINER_ADDRESS'}")
         
         # Add coinbase as first transaction
-        all_transactions = [coinbase] + transactions
-        print(f"🔍 Total transactions: {len(all_transactions)} (1 coinbase + {len(transactions)} from mempool)")
+        all_transactions = [coinbase] + mempool_txs
+        print(f"🔍 Total transactions: {len(all_transactions)} (1 coinbase + {len(mempool_txs)} from mempool)")
         
         # Create block
         block = Block()
@@ -450,7 +457,7 @@ class Miner:
             block_height=self.chain_manager.get_height()
         )
         
-        # Add ALL transactions (including coinbase)
+        # Add ALL transactions (including coinbase and mempool)
         for tx in all_transactions:
             block.add_transaction(tx)
         
@@ -462,7 +469,7 @@ class Miner:
         
         print("🧪 Mining test block...")
         print(f"   Coinbase reward: {reward} satoshis (0.5 ZARU)")
-        print(f"   Transactions: {len(block.transactions)} (including coinbase)")
+        print(f"   Transactions: {len(block.transactions)} (including coinbase and mempool)")
         print(f"   Block height: {block.header.block_height}")
         print(f"   Mining address: {self.address or 'TEST_MINER_ADDRESS'}")
         
