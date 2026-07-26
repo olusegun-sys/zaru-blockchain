@@ -6,6 +6,7 @@ WHY: SQLite works on Windows, macOS, and Linux without compilation.
 It's perfect for development and testing.
 
 ADDED: Debug logging for UTXO queries to troubleshoot balance issues.
+FIXED: get_chain_state returns JSON string (not deserialized object).
 """
 
 import json
@@ -324,33 +325,55 @@ class SQLiteStore(BaseStore):
             return 0
     
     # ============================================
-    # CHAIN STATE METHODS
+    # CHAIN STATE METHODS - FIXED
     # ============================================
     
     def put_chain_state(self, key: str, value: Any) -> bool:
-        """Store chain metadata"""
+        """
+        Store chain metadata.
+        
+        FIXED: Always store as JSON string for consistency.
+        """
         try:
+            # Always serialize to JSON string for consistency
+            if isinstance(value, (dict, list)):
+                value_json = json.dumps(value)
+            elif isinstance(value, str):
+                # If it's already a string, keep it as is (but it might be JSON)
+                try:
+                    json.loads(value)
+                    value_json = value  # It's valid JSON string
+                except:
+                    value_json = json.dumps(value)  # It's a plain string
+            else:
+                value_json = json.dumps(value)
+            
             self.cursor.execute("""
                 INSERT OR REPLACE INTO chain_state (key, value, updated_at)
                 VALUES (?, ?, ?)
-            """, (key, self._serialize(value), int(time.time())))
+            """, (key, value_json, int(time.time())))
             
             self.connection.commit()
             return True
         except Exception as e:
-            print(f"❌ Error storing chain state {key}: {e}")
+            print(f"❌ Error storing chain state '{key}': {e}")
             return False
     
-    def get_chain_state(self, key: str) -> Optional[Any]:
-        """Retrieve chain metadata"""
+    def get_chain_state(self, key: str) -> Optional[str]:
+        """
+        Retrieve chain metadata.
+        
+        FIXED: Returns JSON string (not deserialized object) for consistency.
+        """
         try:
             self.cursor.execute("SELECT value FROM chain_state WHERE key = ?", (key,))
             row = self.cursor.fetchone()
             if row:
-                return self._deserialize(row[0])
+                # Return the JSON string directly (not deserialized)
+                return row[0]
             return None
         except Exception as e:
-            print(f"❌ Error retrieving chain state {key}: {e}")
+            print(f"❌ Error retrieving chain state '{key}': {e}")
             return None
     
     # ============================================

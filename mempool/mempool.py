@@ -6,7 +6,7 @@ Manages pending transactions with PostgreSQL persistence.
 FIXED: PostgreSQL-backed mempool for shared access across API and Miner services.
 FIXED: Transactions persist across service restarts.
 FIXED: Both API and Miner can read/write from the same mempool.
-FIXED: Proper import of database store.
+FIXED: Proper handling of JSON strings from chain_state.
 """
 
 import time
@@ -43,11 +43,14 @@ class Mempool:
     def _get_mempool_count(self) -> int:
         """Get count of pending transactions from database."""
         try:
-            txs = db_store.get_chain_state('mempool_transactions')
-            if txs:
-                return len(json.loads(txs))
+            txs_json = db_store.get_chain_state('mempool_transactions')
+            if txs_json:
+                # FIXED: txs_json is already a JSON string from get_chain_state
+                txs_data = json.loads(txs_json)
+                return len(txs_data)
             return 0
-        except:
+        except Exception as e:
+            print(f"⚠️ Error getting mempool count: {e}")
             return 0
     
     def _load_from_database(self):
@@ -55,6 +58,7 @@ class Mempool:
         try:
             txs_json = db_store.get_chain_state('mempool_transactions')
             if txs_json:
+                # FIXED: txs_json is already a JSON string from get_chain_state
                 txs_data = json.loads(txs_json)
                 print(f"📥 Loaded {len(txs_data)} transactions from PostgreSQL")
                 self._cache = {}
@@ -72,8 +76,16 @@ class Mempool:
                 print(f"✅ {len(self._cache)} transactions loaded into cache")
             else:
                 print(f"📭 No pending transactions in PostgreSQL")
+                self._cache = {}
+                self._utxo_cache = {}
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Failed to parse mempool JSON: {e}")
+            self._cache = {}
+            self._utxo_cache = {}
         except Exception as e:
             print(f"⚠️ Failed to load mempool from database: {e}")
+            self._cache = {}
+            self._utxo_cache = {}
     
     def _save_to_database(self):
         """Save all pending transactions to PostgreSQL."""
@@ -81,6 +93,7 @@ class Mempool:
             # Clean expired transactions first
             self._remove_expired()
             
+            # FIXED: Store as JSON string directly
             txs_json = json.dumps(self._cache)
             db_store.put_chain_state('mempool_transactions', txs_json)
             db_store.put_chain_state('mempool_size', len(self._cache))

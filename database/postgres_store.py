@@ -2,6 +2,7 @@
 PostgreSQL Store Implementation
 ===============================
 Production database backend using PostgreSQL.
+FIXED: get_chain_state returns JSON string (not deserialized object).
 FIXED: Proper transaction handling with rollback on error.
 """
 
@@ -51,7 +52,6 @@ class PostgresStore(BaseStore):
     def _ensure_connection(self):
         """Ensure connection is valid and not in aborted state."""
         try:
-            # Test connection
             self.cur.execute("SELECT 1")
         except psycopg2.ProgrammingError as e:
             if "current transaction is aborted" in str(e):
@@ -211,7 +211,7 @@ class PostgresStore(BaseStore):
     def get_utxos_for_address(self, address: str) -> List[Dict[str, Any]]:
         try:
             self._ensure_connection()
-            self.cur.execute("SELECT tx_id, output_index, amount, block_height FROM utxos WHERE address = %s AND is_spent = FALSE", (address,))
+            self.cur.execute("SELECT tx_id, output_index, amount, block_height FROM utxos WHERE address = %s AND is_spent = FALSE ORDER BY block_height ASC", (address,))
             rows = self.cur.fetchall()
             return [{'tx_id': r[0], 'output_index': r[1], 'amount': r[2], 'block_height': r[3]} for r in rows]
         except Exception as e:
@@ -227,25 +227,63 @@ class PostgresStore(BaseStore):
             print(f"❌ Error getting UTXO count: {e}")
             return 0
     
+    # ============================================
+    # CHAIN STATE METHODS - FIXED
+    # ============================================
+    
     def put_chain_state(self, key: str, value: Any) -> bool:
+        """
+        Store chain metadata.
+        
+        FIXED: Always store as JSON string for consistency.
+        """
         try:
             self._ensure_connection()
-            self.cur.execute("INSERT INTO chain_state (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (key, Json(value)))
+            # Always serialize to JSON string for consistency
+            if isinstance(value, (dict, list)):
+                value_json = json.dumps(value)
+            elif isinstance(value, str):
+                # If it's already a string, keep it as is (but it might be JSON)
+                # Try to parse it to see if it's valid JSON
+                try:
+                    json.loads(value)
+                    value_json = value  # It's valid JSON string
+                except:
+                    value_json = json.dumps(value)  # It's a plain string
+            else:
+                value_json = json.dumps(value)
+            
+            self.cur.execute(
+                "INSERT INTO chain_state (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP",
+                (key, Json(value_json))
+            )
             self.conn.commit()
             return True
         except Exception as e:
-            print(f"❌ Error storing chain state: {e}")
+            print(f"❌ Error storing chain state '{key}': {e}")
             self.conn.rollback()
             return False
     
-    def get_chain_state(self, key: str) -> Optional[Any]:
+    def get_chain_state(self, key: str) -> Optional[str]:
+        """
+        Retrieve chain metadata.
+        
+        FIXED: Returns JSON string (not deserialized object) for consistency.
+        """
         try:
             self._ensure_connection()
             self.cur.execute("SELECT value FROM chain_state WHERE key = %s", (key,))
             row = self.cur.fetchone()
-            return row[0] if row else None
+            if row:
+                # Return the JSON string directly (not deserialized)
+                value = row[0]
+                # If it's a dict/list, serialize it back to string
+                if isinstance(value, (dict, list)):
+                    return json.dumps(value)
+                return str(value)
+            return None
         except Exception as e:
-            print(f"❌ Error retrieving chain state: {e}")
+            print(f"❌ Error retrieving chain state '{key}': {e}")
             return None
     
     def put_transaction(self, tx_id: str, tx_data: Dict[str, Any]) -> bool:
