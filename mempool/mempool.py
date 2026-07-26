@@ -310,7 +310,7 @@ class Mempool:
         return removed
     
     # ============================================
-    # TRANSACTION RETRIEVAL
+    # TRANSACTION RETRIEVAL - FIXED
     # ============================================
     
     def get_transaction(self, tx_id: str) -> Optional[Transaction]:
@@ -321,6 +321,8 @@ class Mempool:
     def get_transactions(self, count: Optional[int] = None) -> List[Transaction]:
         """
         Get transactions from the mempool, ordered by fee.
+        
+        FIXED: Returns transactions properly from the heap.
         
         Args:
             count: Maximum number of transactions to return
@@ -335,10 +337,13 @@ class Mempool:
         
         # Get top transactions
         result = []
-        for entry in self.heap[:count if count else len(self.heap)]:
+        for entry in self.heap:
             if entry.tx_id in self.transactions:
                 result.append(entry.transaction)
+                if count and len(result) >= count:
+                    break
         
+        print(f"📊 get_transactions: returning {len(result)} transactions (mempool size: {len(self.transactions)})")
         return result
     
     def get_transactions_for_block(
@@ -487,6 +492,14 @@ class Mempool:
         
         return removed
     
+    def clear(self) -> None:
+        """Clear all transactions from the mempool."""
+        self.transactions.clear()
+        self.heap.clear()
+        self.by_address.clear()
+        self.spent_utxos.clear()
+        print("🗑️  Mempool cleared")
+    
     # ============================================
     # ADDRESS QUERIES
     # ============================================
@@ -532,14 +545,6 @@ class Mempool:
     # MEMPOOL STATE
     # ============================================
     
-    def clear(self) -> None:
-        """Clear all transactions from the mempool."""
-        self.transactions.clear()
-        self.heap.clear()
-        self.by_address.clear()
-        self.spent_utxos.clear()
-        print("🗑️  Mempool cleared")
-    
     def get_state(self) -> Dict[str, Any]:
         """
         Get the current mempool state.
@@ -577,6 +582,8 @@ class Mempool:
         """
         Prepare transactions for mining.
         
+        FIXED: Returns transactions directly from get_transactions().
+        
         Args:
             block_size: Maximum block size in bytes
         
@@ -590,8 +597,9 @@ class Mempool:
         self.cleanup()
         
         # Get transactions for block
-        transactions = self.get_transactions_for_block(block_size)
+        transactions = self.get_transactions(block_size)
         
+        print(f"⛏️ prepare_for_mining: returning {len(transactions)} transactions")
         return transactions
     
     def confirm_block(self, block: Any) -> int:
