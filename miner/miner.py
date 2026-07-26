@@ -7,7 +7,9 @@ ADDED: Easy mode for bot mining (reduced difficulty)
 FIXED: Coinbase transaction properly added to all mined blocks
 FIXED: Mempool transactions now included in blocks
 FIXED: UnboundLocalError in mining_loop (block variable initialized)
-VERSION: 2.2 - With Mempool Transaction Support
+FIXED: Duplicate block detection to prevent infinite mining loops
+FIXED: Failed attempts counter to break out of stuck loops
+VERSION: 2.3 - With Duplicate Prevention & Loop Safety
 """
 
 import time
@@ -40,6 +42,8 @@ class MiningStats:
 class Miner:
     """
     Handles Proof of Work mining with EASY MODE for bots.
+    
+    VERSION 2.3: Added duplicate block detection and loop safety.
     """
     
     def __init__(
@@ -59,8 +63,11 @@ class Miner:
         """
         self.store = store if store else db_store
         self.chain_manager = chain_manager if chain_manager else ChainManager(self.store)
-        self.mempool = mempool if mempool else Mempool(self.chain_manager.utxo_set, self.store)
+        self.mempool = mempool if mempool else Mempool()
         self.utxo_set = utxo_set if utxo_set else self.chain_manager.utxo_set
+        
+        # Pass mempool to chain_manager for confirmation
+        self.chain_manager.mempool = self.mempool
         
         self.address = address
         self.is_mining = False
@@ -79,7 +86,7 @@ class Miner:
             self.chain_manager._difficulty = settings.EASY_DIFFICULTY
             self.chain_manager.store.put_chain_state('difficulty', settings.EASY_DIFFICULTY)
         
-        print(f"✅ Miner initialized (VERSION 2.2 - MEMPOOL SUPPORT)")
+        print(f"✅ Miner initialized (VERSION 2.3 - WITH DUPLICATE PREVENTION)")
         print(f"   Address: {address or 'Not set - mining disabled'}")
         print(f"   Difficulty: {self.chain_manager.get_difficulty()}")
         print(f"   Mode: {'Easy' if easy_mode else 'Normal'}")
@@ -239,10 +246,12 @@ class Miner:
         start_time = time.time()
         found_block = None
         found_event = threading.Event()
+        self.hash_count = 0
         
         def mine_range(start_nonce: int, step: int) -> Optional[Block]:
             nonce = start_nonce
             local_block = Block.from_dict(block.to_dict())
+            local_hash_count = 0
             
             while not found_event.is_set() and not self.stop_event.is_set():
                 local_block.header.nonce = nonce
@@ -256,8 +265,9 @@ class Miner:
                     return local_block
                 
                 nonce += step
+                local_hash_count += 1
                 
-                if nonce % 10000 == 0:
+                if local_hash_count % 10000 == 0:
                     self.hash_count += 10000
             
             return None
@@ -308,14 +318,14 @@ class Miner:
         success, message = self.chain_manager.add_block(block)
         
         if success:
-            # Remove confirmed transactions from mempool
+            # Remove confirmed transactions from mempool (if not already done)
             self.mempool.confirm_block(block)
             print(f"✅ Block {block.header.block_height} submitted to chain")
         
         return success, message
     
     # ============================================
-    # CONTINUOUS MINING
+    # CONTINUOUS MINING - FIXED WITH DUPLICATE DETECTION
     # ============================================
     
     def start_mining(self, continuous: bool = True, num_threads: int = 1, block: Optional[Block] = None) -> None:
@@ -332,13 +342,25 @@ class Miner:
         self.stop_event.clear()
         
         def mining_loop():
-            """Main mining loop - FIXED: block variable initialized."""
+            """
+            Main mining loop - FIXED: With duplicate block detection.
+            
+            VERSION 2.3 CHANGES:
+            - Track last submitted block hash
+            - Count failed attempts
+            - Force new template after too many duplicates
+            - Prevent infinite loops
+            """
             print(f"🚀 Started mining (continuous={continuous}, easy={self.easy_mode})")
-            print(f"🔍 VERSION 2.2 - WITH MEMPOOL SUPPORT")
+            print(f"🔍 VERSION 2.3 - WITH DUPLICATE PREVENTION")
             
             current_block = block
+            last_submitted_hash = None  # Track last submitted block
+            failed_attempts = 0          # Count consecutive failures
+            max_failed_attempts = 5      # Max failures before forcing new template
             
             while self.is_mining and not self.stop_event.is_set():
+                # Create new block template if needed
                 if not current_block:
                     current_block = self.create_block_template()
                 
@@ -347,21 +369,58 @@ class Miner:
                     time.sleep(5)
                     continue
                 
+                # Check if chain height changed while mining
+                current_height = self.chain_manager.get_height()
+                if current_block.header.block_height != current_height:
+                    print(f"🔄 Chain height changed from {current_block.header.block_height} to {current_height}, refreshing template")
+                    current_block = None
+                    continue
+                
+                # Mine the block
                 if num_threads > 1:
                     mined = self.mine_block_parallel(current_block, num_threads)
                 else:
                     mined = self.mine_block(current_block)
                 
                 if mined:
+                    # FIXED: Check for duplicate block
+                    if mined.hash == last_submitted_hash:
+                        failed_attempts += 1
+                        print(f"⚠️ Duplicate block detected (attempt {failed_attempts}/{max_failed_attempts}), skipping submission")
+                        
+                        if failed_attempts >= max_failed_attempts:
+                            print("🔄 Too many duplicate blocks, forcing new template")
+                            current_block = None
+                            failed_attempts = 0
+                            time.sleep(2)
+                            continue
+                        
+                        time.sleep(1)
+                        continue
+                    
+                    # Submit the block
                     success, message = self.submit_block(mined)
                     
                     if success:
                         print(f"✅ Block {mined.header.block_height} added to chain")
-                        current_block = None
+                        current_block = None          # Get new template for next block
+                        last_submitted_hash = mined.hash
+                        failed_attempts = 0
                     else:
                         print(f"❌ Failed to submit block: {message}")
-                        time.sleep(1)
+                        
+                        # If validation failed with height mismatch, refresh template
+                        if "height" in message.lower():
+                            print("🔄 Height mismatch, refreshing template")
+                            current_block = None
+                            failed_attempts = 0
+                        else:
+                            # Don't retry the same block
+                            last_submitted_hash = mined.hash
+                            failed_attempts += 1
+                            time.sleep(1)
                 else:
+                    # No block mined (stopped or error)
                     break
                 
                 if not continuous:
@@ -404,6 +463,7 @@ class Miner:
             'difficulty': self.chain_manager.get_difficulty(),
             'chain_height': self.chain_manager.get_height(),
             'easy_mode': self.easy_mode,
+            'version': '2.3',
         }
     
     def get_hash_rate(self) -> float:
@@ -426,7 +486,7 @@ class Miner:
         
         FIXED: Ensures coinbase transaction is added to the block.
         """
-        print("🔍 VERSION 2.2 - WITH MEMPOOL SUPPORT (mine_test_block)")
+        print("🔍 VERSION 2.3 - WITH DUPLICATE PREVENTION (mine_test_block)")
         
         if difficulty is None:
             difficulty = settings.EASY_DIFFICULTY
