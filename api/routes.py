@@ -3,6 +3,7 @@ ZARU API Routes Module
 ======================
 All REST API endpoints for ZARU.
 
+ADDED: Mempool clear endpoint for debugging.
 ADDED: Import private key endpoint.
 FIXED: Correct imports from blockchain.utxo.
 """
@@ -349,6 +350,61 @@ async def get_transaction(tx_id: str) -> Dict[str, Any]:
 
 
 # ============================================
+# MEMPOOL ENDPOINTS
+# ============================================
+
+@router.get("/mempool/info")
+async def get_mempool_info() -> Dict[str, Any]:
+    try:
+        state = mempool.get_state()
+        return {
+            "size": state.get('size', 0),
+            "max_size": state.get('max_size', 0),
+            "total_fees": state.get('total_fees', 0),
+            "total_fees_display": f"{state.get('total_fees', 0) / 100_000_000:.8f} ZARU",
+            "transaction_count": state.get('size', 0),
+            "addresses": state.get('addresses', 0),
+            "spent_utxos": state.get('spent_utxos', 0)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/mempool/transactions")
+async def get_mempool_transactions(
+    limit: int = Query(100, ge=1, le=1000)
+) -> Dict[str, Any]:
+    try:
+        transactions = mempool.get_transactions(limit)
+        return {
+            "transactions": [tx.to_dict() for tx in transactions],
+            "count": len(transactions),
+            "total": mempool.get_mempool_size()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mempool/clear")
+async def clear_mempool() -> Dict[str, Any]:
+    """
+    Clear the mempool (for debugging and testing).
+    
+    WHY: Sometimes the mempool gets stuck with pending transactions.
+    This endpoint allows clearing it without restarting the API.
+    """
+    try:
+        mempool.clear()
+        return {
+            "success": True,
+            "message": "Mempool cleared successfully",
+            "size": 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
 # MINING ENDPOINTS
 # ============================================
 
@@ -517,42 +573,6 @@ async def connect_peer(
                 "success": False,
                 "message": f"Failed to connect to {address}:{port}"
             }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================
-# MEMPOOL ENDPOINTS
-# ============================================
-
-@router.get("/mempool/info")
-async def get_mempool_info() -> Dict[str, Any]:
-    try:
-        state = mempool.get_state()
-        return {
-            "size": state.get('size', 0),
-            "max_size": state.get('max_size', 0),
-            "total_fees": state.get('total_fees', 0),
-            "total_fees_display": f"{state.get('total_fees', 0) / 100_000_000:.8f} ZARU",
-            "transaction_count": state.get('size', 0),
-            "addresses": state.get('addresses', 0),
-            "spent_utxos": state.get('spent_utxos', 0)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/mempool/transactions")
-async def get_mempool_transactions(
-    limit: int = Query(100, ge=1, le=1000)
-) -> Dict[str, Any]:
-    try:
-        transactions = mempool.get_transactions(limit)
-        return {
-            "transactions": [tx.to_dict() for tx in transactions],
-            "count": len(transactions),
-            "total": mempool.get_mempool_size()
-        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

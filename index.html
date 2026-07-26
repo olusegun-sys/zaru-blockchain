@@ -190,8 +190,7 @@
     <script>
         // ============================================
         // ZARU WALLET v2.2 — ADDRESS MANAGEMENT
-        // FORCE MINING ADDRESS AS DEFAULT
-        // SAVES SELECTED ADDRESS IN LOCALSTORAGE
+        // WITH BETTER DOUBLE-SPEND ERROR HANDLING
         // ============================================
 
         var API = 'https://zaru-api.onrender.com';
@@ -592,10 +591,22 @@
                     await loadAddressBalances();
                     await renderAddressList();
                 } else {
-                    toast('❌ Failed: ' + data.message, 'error');
+                    // Check for double-spend error
+                    var errorMsg = data.detail || data.message || 'Unknown error';
+                    if (errorMsg.includes('Double-spend') || errorMsg.includes('already spent')) {
+                        toast('⏳ Transaction pending... Please wait for confirmation.', 'info');
+                    } else {
+                        toast('❌ Failed: ' + errorMsg, 'error');
+                    }
                 }
             } catch (e) {
-                toast('❌ Error: ' + e.message, 'error');
+                // Check for double-spend error in the error message
+                var errorMsg = e.message || 'Unknown error';
+                if (errorMsg.includes('Double-spend') || errorMsg.includes('already spent')) {
+                    toast('⏳ Transaction already pending. Please wait for confirmation.', 'info');
+                } else {
+                    toast('❌ Error: ' + errorMsg, 'error');
+                }
             }
         }
 
