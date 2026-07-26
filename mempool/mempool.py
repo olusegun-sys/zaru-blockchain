@@ -7,6 +7,7 @@ FIXED: PostgreSQL-backed mempool for shared access across API and Miner services
 FIXED: Transactions persist across service restarts.
 FIXED: Both API and Miner can read/write from the same mempool.
 FIXED: Proper handling of JSON strings from chain_state.
+FIXED: Added confirm_block() method for miner integration.
 """
 
 import time
@@ -45,7 +46,6 @@ class Mempool:
         try:
             txs_json = db_store.get_chain_state('mempool_transactions')
             if txs_json:
-                # FIXED: txs_json is already a JSON string from get_chain_state
                 txs_data = json.loads(txs_json)
                 return len(txs_data)
             return 0
@@ -58,7 +58,6 @@ class Mempool:
         try:
             txs_json = db_store.get_chain_state('mempool_transactions')
             if txs_json:
-                # FIXED: txs_json is already a JSON string from get_chain_state
                 txs_data = json.loads(txs_json)
                 print(f"📥 Loaded {len(txs_data)} transactions from PostgreSQL")
                 self._cache = {}
@@ -93,7 +92,6 @@ class Mempool:
             # Clean expired transactions first
             self._remove_expired()
             
-            # FIXED: Store as JSON string directly
             txs_json = json.dumps(self._cache)
             db_store.put_chain_state('mempool_transactions', txs_json)
             db_store.put_chain_state('mempool_size', len(self._cache))
@@ -226,6 +224,32 @@ class Mempool:
             if self.remove_transaction(tx_id):
                 removed += 1
         return removed
+    
+    def confirm_block(self, block) -> int:
+        """
+        Remove all transactions from a confirmed block from the mempool.
+        
+        FIXED: Added this method to support miner integration.
+        
+        Args:
+            block: The confirmed block containing transactions to remove
+            
+        Returns:
+            Number of transactions removed
+        """
+        if not hasattr(block, 'transactions'):
+            return 0
+        
+        tx_ids = []
+        for tx in block.transactions:
+            if not tx.is_coinbase:
+                tx_ids.append(tx.tx_id)
+        
+        if tx_ids:
+            print(f"🔍 Confirming block: removing {len(tx_ids)} transactions from mempool")
+            return self.remove_transactions(tx_ids)
+        
+        return 0
     
     def clear(self) -> None:
         """Clear all pending transactions (for debugging)."""
