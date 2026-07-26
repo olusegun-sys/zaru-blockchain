@@ -6,6 +6,9 @@ transaction creation, and balance checking.
 
 FIXED: Correct imports from blockchain.utxo (not root utxo).
 FIXED: Auto-import of mining address on startup.
+FIXED: UTXO selection - prioritize larger UTXOs to reduce transaction size.
+FIXED: Added transaction size check before sending.
+FIXED: Added UTXO consolidation for large sends.
 """
 
 import hashlib
@@ -171,7 +174,108 @@ class Wallet:
         return all_utxos
     
     # ============================================
-    # TRANSACTION CREATION
+    # UTXO CONSOLIDATION (NEW)
+    # ============================================
+    
+    def consolidate_utxos(
+        self,
+        address: str,
+        max_inputs: int = 50
+    ) -> Tuple[bool, str, Optional[Transaction]]:
+        """
+        Consolidate small UTXOs into a single UTXO.
+        
+        WHY: Reduces transaction size for future sends by combining many small UTXOs.
+        WHEN: Use when you have many small UTXOs (like from mining).
+        
+        Args:
+            address: The address to consolidate UTXOs from
+            max_inputs: Maximum number of inputs per consolidation transaction
+        
+        Returns:
+            (success, message, transaction)
+        """
+        # Get all UTXOs for this address
+        utxos = get_utxos_for_address(address)
+        
+        if not utxos:
+            return False, "No UTXOs to consolidate", None
+        
+        # Check if consolidation is needed (more than 50 UTXOs)
+        if len(utxos) <= max_inputs:
+            return False, f"Only {len(utxos)} UTXOs, no consolidation needed", None
+        
+        print(f"🔍 Consolidating {len(utxos)} UTXOs for {address[:10]}...")
+        
+        # Sort by amount (smallest first, to combine them)
+        utxos.sort(key=lambda x: x['amount'])
+        
+        # Get private key
+        private_key = self.key_store.get_private_key(address)
+        if not private_key:
+            return False, f"Private key not found for {address[:10]}...", None
+        
+        # Process in batches
+        total_consolidated = 0
+        total_inputs_used = 0
+        
+        # Take up to max_inputs UTXOs to consolidate
+        selected_utxos = utxos[:max_inputs]
+        total_amount = sum(u['amount'] for u in selected_utxos)
+        
+        # Build inputs
+        inputs = []
+        for utxo in selected_utxos:
+            inputs.append(TxInput(
+                tx_id=utxo['tx_id'],
+                output_index=utxo['output_index']
+            ))
+        
+        # Single output back to the same address
+        outputs = [TxOutput(amount=total_amount, address=address)]
+        
+        # Calculate fee (2 outputs: one for the consolidation, one for change if needed)
+        fee = self._calculate_fee(len(inputs), 2)
+        
+        # If fee is too high relative to amount, reduce inputs
+        if fee > total_amount * 0.05:  # If fee > 5% of amount
+            print(f"⚠️ Fee ({fee}) is > 5% of total amount ({total_amount})")
+            # Use fewer inputs
+            half_inputs = len(selected_utxos) // 2
+            if half_inputs > 1:
+                return self.consolidate_utxos(address, max_inputs=half_inputs)
+        
+        # Adjust output for fee
+        outputs[0].amount = total_amount - fee
+        
+        if outputs[0].amount <= 0:
+            return False, f"Total amount ({total_amount}) less than fee ({fee})", None
+        
+        # Create and sign transaction
+        tx = create_transaction(inputs, outputs, private_key)
+        if not tx:
+            return False, "Failed to create consolidation transaction", None
+        
+        # Validate transaction
+        is_valid, error = self.utxo_set.validate_transaction(tx)
+        if not is_valid:
+            return False, f"Transaction invalid: {error}", None
+        
+        # Add to mempool
+        success, message = self.mempool.add_transaction(tx)
+        if not success:
+            return False, f"Failed to add to mempool: {message}", None
+        
+        print(f"✅ Consolidation transaction sent!")
+        print(f"   UTXOs consolidated: {len(selected_utxos)} → 1")
+        print(f"   Amount: {outputs[0].amount} satoshis")
+        print(f"   Fee: {fee} satoshis")
+        print(f"   TX ID: {tx.tx_id[:16]}...")
+        
+        return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
+    
+    # ============================================
+    # TRANSACTION CREATION (FIXED)
     # ============================================
     
     def send(
@@ -182,7 +286,13 @@ class Wallet:
         fee: int = 0,
         memo: str = ""
     ) -> Tuple[bool, str, Optional[Transaction]]:
-        """Send coins to an address."""
+        """
+        Send coins to an address.
+        
+        FIXED: UTXO selection prioritizes larger UTXOs first.
+        FIXED: Transaction size check before sending.
+        FIXED: Auto-consolidation if too many UTXOs.
+        """
         
         # 1. Find a sender address
         if from_address:
@@ -198,26 +308,6 @@ class Wallet:
         if not private_key:
             return False, f"Private key not found for address {sender[:10]}...", None
         
-        # DEBUG: Verify the private key matches the address
-        try:
-            from ecdsa import SigningKey, SECP256k1
-            sk = SigningKey.from_string(private_key, curve=SECP256k1)
-            vk = sk.get_verifying_key()
-            pub_key = vk.to_string()
-            hash1 = hashlib.sha256(pub_key).digest()
-            hash2 = hashlib.sha256(hash1).digest()
-            computed_address = hash2.hex()[:40]
-            
-            print(f"🔍 DEBUG send: sender={sender}")
-            print(f"🔍 DEBUG send: computed_address={computed_address}")
-            
-            if computed_address != sender:
-                print(f"❌ DEBUG send: Address mismatch!")
-                return False, f"Private key does not match address {sender[:10]}...", None
-            print(f"✅ DEBUG send: Address verification passed")
-        except Exception as e:
-            print(f"⚠️ DEBUG send: Verification error: {e}")
-        
         # 3. Get UTXOs for the sender
         utxos = get_utxos_for_address(sender)
         if not utxos:
@@ -225,25 +315,58 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. Select UTXOs to cover amount
+        # 4. FIXED: Sort UTXOs by amount (LARGEST FIRST)
+        #    This reduces the number of inputs needed for large sends.
+        utxos.sort(key=lambda x: x['amount'], reverse=True)
+        
+        # 5. Select UTXOs to cover amount
         selected_utxos = []
         total_selected = 0
+        needed = amount + fee
         
         for utxo in utxos:
             selected_utxos.append(utxo)
             total_selected += utxo['amount']
             print(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
-            if total_selected >= amount + fee:
+            if total_selected >= needed:
                 break
         
-        if total_selected < amount + fee:
-            return False, f"Insufficient funds: need {amount + fee}, have {total_selected}", None
+        if total_selected < needed:
+            return False, f"Insufficient funds: need {needed}, have {total_selected}", None
         
-        # 5. Calculate fee (auto if not specified)
+        # 6. FIXED: Check if transaction would be too large
+        #    If we have more than 500 inputs, suggest consolidation
+        if len(selected_utxos) > 500:
+            print(f"⚠️ Transaction would have {len(selected_utxos)} inputs (too large!)")
+            
+            # Check if consolidation would help
+            if len(utxos) > 1000:
+                print(f"🔄 Auto-consolidating UTXOs first...")
+                success, msg, _ = self.consolidate_utxos(sender, max_inputs=100)
+                if success:
+                    return False, f"Auto-consolidation started. Please wait for confirmation, then try again.", None
+                else:
+                    return False, f"Too many UTXOs ({len(selected_utxos)}). Please consolidate first.", None
+            
+            # If we can't consolidate, reject
+            return False, f"Transaction would have {len(selected_utxos)} inputs. Max is 500. Please consolidate UTXOs.", None
+        
+        # 7. Calculate fee (auto if not specified)
         if fee == 0:
             fee = self._calculate_fee(len(selected_utxos), 2)
+            
+            # Recalculate needed with fee
+            needed = amount + fee
+            if total_selected < needed:
+                # Need more UTXOs to cover fee
+                for utxo in utxos:
+                    if utxo not in selected_utxos:
+                        selected_utxos.append(utxo)
+                        total_selected += utxo['amount']
+                        if total_selected >= needed:
+                            break
         
-        # 6. Create transaction inputs
+        # 8. Create transaction inputs
         inputs = []
         for utxo in selected_utxos:
             inputs.append(TxInput(
@@ -251,26 +374,26 @@ class Wallet:
                 output_index=utxo['output_index']
             ))
         
-        # 7. Create transaction outputs
+        # 9. Create transaction outputs
         outputs = [TxOutput(amount=amount, address=to_address)]
         
-        # 8. Add change output if needed
+        # 10. Add change output if needed
         change = total_selected - amount - fee
         if change > 0:
             outputs.append(TxOutput(amount=change, address=sender))
         
-        # 9. Create and sign transaction
+        # 11. Create and sign transaction
         print(f"🔍 send: creating transaction with {len(inputs)} inputs, {len(outputs)} outputs")
         tx = create_transaction(inputs, outputs, private_key)
         if not tx:
             return False, "Failed to create transaction", None
         
-        # 10. Validate transaction
+        # 12. Validate transaction (this will check size)
         is_valid, error = self.utxo_set.validate_transaction(tx)
         if not is_valid:
             return False, f"Transaction invalid: {error}", None
         
-        # 11. Add to mempool
+        # 13. Add to mempool
         success, message = self.mempool.add_transaction(tx)
         if not success:
             return False, f"Failed to add to mempool: {message}", None
@@ -280,6 +403,7 @@ class Wallet:
         print(f"   To: {to_address[:10]}...")
         print(f"   Amount: {amount} satoshis")
         print(f"   Fee: {fee} satoshis")
+        print(f"   Inputs: {len(inputs)}")
         print(f"   TX ID: {tx.tx_id[:16]}...")
         
         return True, "Transaction sent successfully", tx
@@ -342,6 +466,7 @@ class Wallet:
         addresses = self.get_addresses()
         total_balance = self.get_balance()
         pending_balance = self.get_pending_balance()
+        utxos = self.get_utxos()
         
         return {
             'address_count': len(addresses),
@@ -349,8 +474,8 @@ class Wallet:
             'total_balance': total_balance,
             'pending_balance': pending_balance,
             'total_balance_display': f"{total_balance / 100_000_000:.8f} ZARU",
+            'utxo_count': len(utxos),
             'chain_height': self.chain_manager.get_height(),
-            'utxo_count': self.utxo_set.get_utxo_count(),
             'mempool_size': self.mempool.get_mempool_size(),
         }
     
@@ -371,13 +496,10 @@ wallet = Wallet()
 # ============================================
 # AUTO-IMPORT MINING ADDRESS ON STARTUP
 # ============================================
-# This ensures the mining address is always available in the wallet
-# even after restarts.
 
 MINING_ADDRESS = "1f6254f2f4dfb787262f6b3e18d482a77cd6a979"
 MINING_PRIVATE_KEY = "c6c66aadd49e821506e3a383beae816b87e5edd37ddb6cb14ee9dbc46e0125dd"
 
-# Check if the key exists, if not import it
 if not wallet.key_store.get_private_key(MINING_ADDRESS):
     print(f"🔑 Auto-importing mining address private key...")
     wallet.import_private_key(MINING_ADDRESS, MINING_PRIVATE_KEY, "Mining Address")
