@@ -4,6 +4,7 @@ ZARU Chain Manager Module
 Manages the blockchain - adding blocks, handling forks, and maintaining chain state.
 
 FIXED: Added duplicate block check to prevent miner loop.
+FIXED: Type-safe height comparison (int vs int).
 """
 
 import time
@@ -21,9 +22,10 @@ class ChainManager:
     Manages the blockchain - the authoritative source of chain state.
     """
     
-    def __init__(self, store=None, utxo_set=None):
+    def __init__(self, store=None, utxo_set=None, mempool=None):
         self.store = store if store else db_store
         self.utxo_set = utxo_set if utxo_set else UTXOSet(self.store)
+        self.mempool = mempool  # Optional: for removing confirmed transactions
         
         self._tip_hash = None
         self._tip_height = None
@@ -31,7 +33,7 @@ class ChainManager:
         
         self._initialize_chain()
         
-        print(f"✅ Chain Manager initialized: Height {self.get_height()}, Tip: {self.get_tip_hash()[:10]}...")
+        print(f"✅ Chain Manager initialized: Height {self.get_height()}, Tip: {self.get_tip_hash()[:10] if self.get_tip_hash() else 'None'}...")
     
     # ============================================
     # INITIALIZATION
@@ -88,14 +90,15 @@ class ChainManager:
             self._tip_height = self.store.get_chain_state('chain_height')
             if self._tip_height is None:
                 self._tip_height = self.store.get_chain_height()
-        return self._tip_height if self._tip_height else 0
+        # Ensure we return an int
+        return int(self._tip_height) if self._tip_height else 0
     
     def get_difficulty(self) -> int:
         if self._difficulty is None:
             self._difficulty = self.store.get_chain_state('difficulty')
             if self._difficulty is None:
                 self._difficulty = settings.INITIAL_DIFFICULTY
-        return self._difficulty
+        return int(self._difficulty)
     
     def get_block(self, block_hash: str) -> Optional[Block]:
         data = self.store.get_block(block_hash)
@@ -104,14 +107,14 @@ class ChainManager:
         return None
     
     def get_block_by_height(self, height: int) -> Optional[Block]:
-        data = self.store.get_block_by_height(height)
+        data = self.store.get_block_by_height(int(height))
         if data:
             return Block.from_dict(data)
         return None
     
     def get_blocks(self, start_height: int, end_height: int) -> List[Block]:
         blocks = []
-        for height in range(start_height, end_height + 1):
+        for height in range(int(start_height), int(end_height) + 1):
             block = self.get_block_by_height(height)
             if block:
                 blocks.append(block)
@@ -127,7 +130,7 @@ class ChainManager:
         return blocks
     
     # ============================================
-    # BLOCK VALIDATION
+    # BLOCK VALIDATION - FIXED TYPE-SAFE
     # ============================================
     
     def validate_block(self, block: Block) -> Tuple[bool, str]:
@@ -138,9 +141,12 @@ class ChainManager:
         if not block.hash or len(block.hash) != 64:
             return False, f"Invalid block hash: {block.hash}"
         
-        expected_height = self.get_height()
-        if block.header.block_height != expected_height:
-            return False, f"Invalid block height: expected {expected_height}, got {block.header.block_height}"
+        # FIXED: Type-safe height comparison
+        expected_height = int(self.get_height())
+        block_height = int(block.header.block_height)
+        
+        if block_height != expected_height:
+            return False, f"Invalid block height: expected {expected_height}, got {block_height}"
         
         tip_hash = self.get_tip_hash()
         if block.header.prev_block_hash != tip_hash:
@@ -175,12 +181,19 @@ class ChainManager:
         return True, "Block is valid"
     
     # ============================================
-    # BLOCK ADDITION
+    # BLOCK ADDITION - FIXED DUPLICATE CHECK
     # ============================================
     
     def add_block(self, block: Block) -> Tuple[bool, str]:
         """Add a block to the blockchain."""
         try:
+            # FIXED: Early duplicate check before validation
+            block_height = int(block.header.block_height)
+            existing = self.get_block_by_height(block_height)
+            if existing:
+                print(f"ℹ️  Block {block_height} already exists, skipping")
+                return True, "Block already exists"
+            
             is_valid, error = self.validate_block(block)
             if not is_valid:
                 return False, f"Block validation failed: {error}"
@@ -203,6 +216,8 @@ class ChainManager:
             
         except Exception as e:
             print(f"❌ Error adding block: {e}")
+            import traceback
+            traceback.print_exc()
             return False, f"Error: {str(e)}"
     
     def _add_to_best_chain(self, block: Block) -> Tuple[bool, str]:
@@ -212,11 +227,13 @@ class ChainManager:
         FIXED: Added duplicate block check to prevent miner loop.
         """
         try:
+            block_height = int(block.header.block_height)
+            
             # Check if this block already exists at this height
-            existing = self.get_block_by_height(block.header.block_height)
+            existing = self.get_block_by_height(block_height)
             if existing:
                 # Block already exists at this height
-                print(f"ℹ️  Block {block.header.block_height} already exists, skipping")
+                print(f"ℹ️  Block {block_height} already exists, skipping")
                 return True, "Block already exists"
             
             # Apply block to UTXO set
@@ -244,7 +261,11 @@ class ChainManager:
             self._tip_hash = block.hash
             self._tip_height = new_height
             
-            print(f"✅ Block {block.header.block_height} added to best chain")
+            # Remove confirmed transactions from mempool
+            if self.mempool:
+                self.mempool.confirm_block(block)
+            
+            print(f"✅ Block {block_height} added to best chain")
             print(f"   Hash: {block.hash[:10]}...")
             print(f"   Tx: {len(block.transactions)}")
             print(f"   New height: {new_height}")
@@ -253,6 +274,8 @@ class ChainManager:
             
         except Exception as e:
             print(f"❌ Error adding block to best chain: {e}")
+            import traceback
+            traceback.print_exc()
             return False, f"Error: {str(e)}"
     
     def _find_fork_point(self, block: Block) -> Optional[int]:
