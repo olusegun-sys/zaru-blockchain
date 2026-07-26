@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>ZARU Wallet v2.1</title>
+    <title>ZARU Wallet v2.2</title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:Arial,sans-serif;background:#0a0e1a;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px;color:#fff}
@@ -106,7 +106,7 @@
         <h1>ZARU <span>Wallet</span></h1>
         <div class="subtitle">
             Digital money for the real world
-            <span class="version">v2.1</span>
+            <span class="version">v2.2</span>
         </div>
 
         <div style="text-align:center;">
@@ -189,8 +189,9 @@
 
     <script>
         // ============================================
-        // ZARU WALLET v2.1 — ADDRESS MANAGEMENT
+        // ZARU WALLET v2.2 — ADDRESS MANAGEMENT
         // FORCE MINING ADDRESS AS DEFAULT
+        // SAVES SELECTED ADDRESS IN LOCALSTORAGE
         // ============================================
 
         var API = 'https://zaru-api.onrender.com';
@@ -243,6 +244,7 @@
             try {
                 localStorage.setItem('zaru_addresses', JSON.stringify(addresses));
                 localStorage.setItem('zaru_current_address', currentAddress);
+                localStorage.setItem('zaru_selected_address', currentAddress);
                 localStorage.setItem('zaru_last_updated', Date.now().toString());
             } catch (e) {
                 console.warn('Could not save to localStorage:', e);
@@ -254,9 +256,13 @@
             try {
                 var saved = localStorage.getItem('zaru_addresses');
                 var savedCurrent = localStorage.getItem('zaru_current_address');
+                var savedSelected = localStorage.getItem('zaru_selected_address');
                 if (saved) {
                     addresses = JSON.parse(saved);
-                    if (savedCurrent && addresses.includes(savedCurrent)) {
+                    // Priority: selected address > current address > first address
+                    if (savedSelected && addresses.includes(savedSelected)) {
+                        currentAddress = savedSelected;
+                    } else if (savedCurrent && addresses.includes(savedCurrent)) {
                         currentAddress = savedCurrent;
                     } else if (addresses.length > 0) {
                         currentAddress = addresses[0];
@@ -331,6 +337,7 @@
             
             currentAddress = address;
             localStorage.setItem('zaru_current_address', address);
+            localStorage.setItem('zaru_selected_address', address);
             document.getElementById('addressDisplay').textContent = currentAddress;
             
             await refreshBalance();
@@ -363,18 +370,19 @@
                 if (apiAddresses.length > 0) {
                     addresses = apiAddresses;
                     
-                    // FORCE: Use mining address if it exists
-                    if (addresses.includes(MINING_ADDRESS)) {
+                    // FIXED: Use the selected address from localStorage
+                    var selectedAddress = localStorage.getItem('zaru_selected_address');
+                    var savedCurrent = localStorage.getItem('zaru_current_address');
+                    
+                    // Priority: selected address > saved current > mining address > first
+                    if (selectedAddress && addresses.includes(selectedAddress)) {
+                        currentAddress = selectedAddress;
+                    } else if (savedCurrent && addresses.includes(savedCurrent)) {
+                        currentAddress = savedCurrent;
+                    } else if (addresses.includes(MINING_ADDRESS)) {
                         currentAddress = MINING_ADDRESS;
-                        console.log('✅ FORCED to mining address:', currentAddress);
                     } else {
-                        // Fallback: use saved current address or first
-                        var savedCurrent = localStorage.getItem('zaru_current_address');
-                        if (savedCurrent && addresses.includes(savedCurrent)) {
-                            currentAddress = savedCurrent;
-                        } else {
-                            currentAddress = addresses[0];
-                        }
+                        currentAddress = addresses[0];
                     }
                     
                     saveAddresses();
@@ -402,8 +410,11 @@
                 console.error('API error, falling back to localStorage:', e);
                 var hasSaved = loadSavedAddresses();
                 if (hasSaved && addresses.length > 0) {
-                    // FORCE: Use mining address if available
-                    if (addresses.includes(MINING_ADDRESS)) {
+                    // FIXED: Use selected address if available
+                    var selectedAddress = localStorage.getItem('zaru_selected_address');
+                    if (selectedAddress && addresses.includes(selectedAddress)) {
+                        currentAddress = selectedAddress;
+                    } else if (addresses.includes(MINING_ADDRESS)) {
                         currentAddress = MINING_ADDRESS;
                     }
                     document.getElementById('addressDisplay').textContent = currentAddress;
@@ -594,11 +605,11 @@
             load();
         });
 
-        console.log('🔐 ZARU Wallet v2.1 loaded');
+        console.log('🔐 ZARU Wallet v2.2 loaded');
         console.log('📡 API:', API);
         console.log('📍 Mining Address:', MINING_ADDRESS);
+        console.log('💡 Selected address is saved in localStorage');
         console.log('💡 Click an address in the list to switch');
-        console.log('💡 Forced mining address as default');
     </script>
 
 </body>
