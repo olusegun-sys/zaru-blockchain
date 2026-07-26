@@ -3,7 +3,7 @@ ZARU Chain Manager Module
 =========================
 Manages the blockchain - adding blocks, handling forks, and maintaining chain state.
 
-FIXED: Coinbase validation uses MAX_COINBASE_REWARD from config.
+FIXED: Added duplicate block check to prevent miner loop.
 """
 
 import time
@@ -164,7 +164,7 @@ class ChainManager:
         if block.transactions and not block.transactions[0].is_coinbase:
             return False, "First transaction must be coinbase"
         
-        # FIXED: Validate coinbase reward using MAX_COINBASE_REWARD
+        # Validate coinbase reward using MAX_COINBASE_REWARD
         if block.transactions and block.transactions[0].is_coinbase:
             coinbase = block.transactions[0]
             MAX_COINBASE_REWARD = getattr(settings, 'MAX_COINBASE_REWARD', 5_000_000_000)
@@ -206,18 +206,33 @@ class ChainManager:
             return False, f"Error: {str(e)}"
     
     def _add_to_best_chain(self, block: Block) -> Tuple[bool, str]:
-        """Add a block to the best chain."""
+        """
+        Add a block to the best chain.
+        
+        FIXED: Added duplicate block check to prevent miner loop.
+        """
         try:
+            # Check if this block already exists at this height
+            existing = self.get_block_by_height(block.header.block_height)
+            if existing:
+                # Block already exists at this height
+                print(f"ℹ️  Block {block.header.block_height} already exists, skipping")
+                return True, "Block already exists"
+            
+            # Apply block to UTXO set
             if not self.utxo_set.apply_block(block):
                 return False, "Failed to apply block to UTXO set"
             
+            # Store block in database
             if not self.store.put_block(block.hash, block.to_dict()):
                 return False, "Failed to store block in database"
             
+            # Update chain state
             new_height = self.get_height() + 1
             self.store.put_chain_state('chain_tip', block.hash)
             self.store.put_chain_state('chain_height', new_height)
             
+            # Update difficulty (if needed)
             if new_height % settings.DIFFICULTY_ADJUSTMENT_INTERVAL == 0:
                 prev_block = self.get_block_by_height(new_height - settings.DIFFICULTY_ADJUSTMENT_INTERVAL - 1)
                 if prev_block:
@@ -225,6 +240,7 @@ class ChainManager:
                     self.store.put_chain_state('difficulty', new_difficulty)
                     self._difficulty = new_difficulty
             
+            # Update cache
             self._tip_hash = block.hash
             self._tip_height = new_height
             
@@ -418,9 +434,17 @@ class ChainManager:
         }
 
 
+# ============================================
+# CONVENIENCE FUNCTIONS
+# ============================================
+
 def create_chain_manager(store=None, utxo_set=None) -> ChainManager:
     return ChainManager(store, utxo_set)
 
+
+# ============================================
+# GLOBAL INSTANCE
+# ============================================
 
 chain_manager = ChainManager()
 
