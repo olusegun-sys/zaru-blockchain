@@ -5,6 +5,8 @@ Defines the transaction data structure for ZARU blockchain.
 Implements UTXO model with digital signature verification.
 
 FIXED: Complete rewrite of signing and verification logic (Bitcoin-style).
+FIXED: Proper import of database store (db_store alias).
+FIXED: Burn mechanism uses correct import.
 """
 
 import hashlib
@@ -18,6 +20,7 @@ from ecdsa.util import sigencode_der, sigdecode_der
 
 from pydantic import BaseModel, Field, validator
 from config import settings
+from database import store as db_store  # FIXED: Correct import alias
 
 
 @dataclass
@@ -319,10 +322,10 @@ class Transaction(BaseModel):
                         address=burn_address
                     ))
                     
-                    from database import store
-                    total_burned = store.get_chain_state('total_burned') or 0
+                    # FIXED: Use db_store alias (not 'store')
+                    total_burned = db_store.get_chain_state('total_burned') or 0
                     total_burned += burn_amount
-                    store.put_chain_state('total_burned', total_burned)
+                    db_store.put_chain_state('total_burned', total_burned)
                     print(f"🔥 Burned {burn_amount} satoshis (Total burned: {total_burned})")
         
         return True, "Valid transaction"
