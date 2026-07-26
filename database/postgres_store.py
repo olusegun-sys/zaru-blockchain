@@ -2,7 +2,7 @@
 PostgreSQL Store Implementation
 ===============================
 Production database backend using PostgreSQL.
-FIXED: get_chain_state returns JSON string (not deserialized object).
+FIXED: get_chain_state returns clean string without JSON formatting.
 FIXED: Proper transaction handling with rollback on error.
 """
 
@@ -244,7 +244,6 @@ class PostgresStore(BaseStore):
                 value_json = json.dumps(value)
             elif isinstance(value, str):
                 # If it's already a string, keep it as is (but it might be JSON)
-                # Try to parse it to see if it's valid JSON
                 try:
                     json.loads(value)
                     value_json = value  # It's valid JSON string
@@ -268,23 +267,52 @@ class PostgresStore(BaseStore):
         """
         Retrieve chain metadata.
         
-        FIXED: Returns JSON string (not deserialized object) for consistency.
+        FIXED: Returns clean string without JSON formatting/quoting.
         """
         try:
             self._ensure_connection()
             self.cur.execute("SELECT value FROM chain_state WHERE key = %s", (key,))
             row = self.cur.fetchone()
             if row:
-                # Return the JSON string directly (not deserialized)
                 value = row[0]
-                # If it's a dict/list, serialize it back to string
-                if isinstance(value, (dict, list)):
+                
+                # Handle JSONB value (could be dict, list, or string)
+                if isinstance(value, dict):
+                    # If it's a dict with a single string value, extract it
+                    if len(value) == 1:
+                        for v in value.values():
+                            if isinstance(v, str):
+                                # Check if it's a quoted string
+                                if v.startswith('"') and v.endswith('"'):
+                                    return v[1:-1]
+                                return v
+                    # Otherwise return as JSON string
                     return json.dumps(value)
-                return str(value)
+                elif isinstance(value, list):
+                    return json.dumps(value)
+                elif isinstance(value, str):
+                    # If it's a JSON string with quotes, strip them
+                    if value.startswith('"') and value.endswith('"'):
+                        return value[1:-1]
+                    return value
+                else:
+                    return str(value)
             return None
         except Exception as e:
             print(f"❌ Error retrieving chain state '{key}': {e}")
             return None
+    
+    def delete_chain_state(self, key: str) -> bool:
+        """Delete a value from the chain_state table."""
+        try:
+            self._ensure_connection()
+            self.cur.execute("DELETE FROM chain_state WHERE key = %s", (key,))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"❌ Error deleting chain state '{key}': {e}")
+            self.conn.rollback()
+            return False
     
     def put_transaction(self, tx_id: str, tx_data: Dict[str, Any]) -> bool:
         try:

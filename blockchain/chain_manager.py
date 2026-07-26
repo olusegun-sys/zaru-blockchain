@@ -5,9 +5,11 @@ Manages the blockchain - adding blocks, handling forks, and maintaining chain st
 
 FIXED: Added duplicate block check to prevent miner loop.
 FIXED: Type-safe height comparison (int vs int).
+FIXED: Clean tip_hash, tip_height, difficulty from database.
 """
 
 import time
+import re
 from typing import Optional, Dict, List, Tuple, Any
 
 from config import settings
@@ -64,11 +66,37 @@ class ChainManager:
         print(f"✅ Genesis block created: {genesis.hash[:10]}...")
         print(f"   Initial supply: {settings.INITIAL_COIN_SUPPLY} ZARU")
     
-    def _load_chain_state(self) -> None:
-        self._tip_hash = self.store.get_chain_state('chain_tip')
-        self._tip_height = self.store.get_chain_state('chain_height')
-        self._difficulty = self.store.get_chain_state('difficulty')
+    def _clean_string(self, value: Any) -> str:
+        """Clean a string value from database (remove quotes, extra chars)."""
+        if not value:
+            return ""
+        if not isinstance(value, str):
+            return str(value)
         
+        # Strip quotes
+        cleaned = value.strip('"').strip()
+        
+        # If it looks like a hash, try to extract 64-char hash
+        if len(cleaned) != 64:
+            match = re.search(r'[a-fA-F0-9]{64}', cleaned)
+            if match:
+                return match.group(0)
+        
+        return cleaned
+    
+    def _load_chain_state(self) -> None:
+        """Load chain state from database with cleaning."""
+        self._tip_hash = self._clean_string(self.store.get_chain_state('chain_tip'))
+        
+        tip_height = self.store.get_chain_state('chain_height')
+        if tip_height is not None:
+            self._tip_height = int(self._clean_string(tip_height))
+        
+        difficulty = self.store.get_chain_state('difficulty')
+        if difficulty is not None:
+            self._difficulty = int(self._clean_string(difficulty))
+        
+        # If any state is missing, try to recover from latest block
         if self._tip_hash is None or self._tip_height is None:
             latest = self.store.get_latest_block()
             if latest:
@@ -81,22 +109,28 @@ class ChainManager:
     # ============================================
     
     def get_tip_hash(self) -> Optional[str]:
+        """Get the tip hash with cleaning."""
         if self._tip_hash is None:
-            self._tip_hash = self.store.get_chain_state('chain_tip')
+            self._tip_hash = self._clean_string(self.store.get_chain_state('chain_tip'))
         return self._tip_hash
     
     def get_height(self) -> int:
+        """Get the chain height as integer."""
         if self._tip_height is None:
-            self._tip_height = self.store.get_chain_state('chain_height')
-            if self._tip_height is None:
+            tip_height = self.store.get_chain_state('chain_height')
+            if tip_height is not None:
+                self._tip_height = int(self._clean_string(tip_height))
+            else:
                 self._tip_height = self.store.get_chain_height()
-        # Ensure we return an int
         return int(self._tip_height) if self._tip_height else 0
     
     def get_difficulty(self) -> int:
+        """Get the difficulty as integer."""
         if self._difficulty is None:
-            self._difficulty = self.store.get_chain_state('difficulty')
-            if self._difficulty is None:
+            difficulty = self.store.get_chain_state('difficulty')
+            if difficulty is not None:
+                self._difficulty = int(self._clean_string(difficulty))
+            else:
                 self._difficulty = settings.INITIAL_DIFFICULTY
         return int(self._difficulty)
     
@@ -150,7 +184,7 @@ class ChainManager:
         
         tip_hash = self.get_tip_hash()
         if block.header.prev_block_hash != tip_hash:
-            return False, f"Previous block hash mismatch: expected {tip_hash}, got {block.header.prev_block_hash}"
+            return False, f"Previous block hash mismatch: expected {tip_hash[:16]}, got {block.header.prev_block_hash[:16]}"
         
         if not block.header.is_valid_pow():
             return False, "Block does not meet difficulty target"

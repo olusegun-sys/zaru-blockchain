@@ -6,11 +6,14 @@ Implements proof of work with difficulty adjustment.
 
 WHY: Blocks are the containers that hold transactions and link them 
 together in a chain using cryptographic hashes.
+
+FIXED: Robust prev_block_hash validation handling quoted strings.
 """
 
 import hashlib
 import json
 import time
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
@@ -44,17 +47,50 @@ class BlockHeader(BaseModel):
     
     @validator('prev_block_hash')
     def validate_prev_hash(cls, v):
-        """Validate previous block hash format"""
-        if v and len(v) != 64:  # SHA-256 produces 64 hex characters
-            raise ValueError(f"Invalid previous block hash length: {len(v)}")
-        return v
+        """
+        Validate previous block hash format.
+        
+        FIXED: Handles quoted strings, extra characters, and extracts hash.
+        """
+        if not v:
+            return ""
+        
+        # Clean the string
+        if isinstance(v, str):
+            # Strip quotes first
+            v = v.strip('"').strip()
+            
+            # If it's still not 64 chars, try harder
+            if len(v) != 64:
+                # Try to find a 64-character hex string within
+                match = re.search(r'[a-fA-F0-9]{64}', v)
+                if match:
+                    return match.group(0)
+                
+                # If it has extra characters, try to clean
+                v = ''.join(c for c in v if c in '0123456789abcdefABCDEF')
+                if len(v) == 64:
+                    return v
+                
+                raise ValueError(f"Invalid previous block hash: '{v}' (length: {len(v)})")
+            
+            return v
+        
+        return str(v)
     
     @validator('difficulty_target')
     def validate_difficulty(cls, v):
-        """Ensure difficulty target is positive"""
+        """Ensure difficulty target is positive."""
         if v <= 0:
             raise ValueError("Difficulty target must be positive")
         return v
+    
+    @validator('block_height')
+    def validate_height(cls, v):
+        """Ensure block height is non-negative."""
+        if v < 0:
+            raise ValueError("Block height must be non-negative")
+        return int(v)
     
     def compute_hash(self) -> str:
         """
@@ -110,14 +146,24 @@ class BlockHeader(BaseModel):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BlockHeader':
         """Create header from dictionary"""
+        # Clean prev_block_hash if present
+        prev_hash = data.get('prev_block_hash', '')
+        if isinstance(prev_hash, str):
+            prev_hash = prev_hash.strip('"').strip()
+            # Try to extract 64-char hash if needed
+            if len(prev_hash) != 64:
+                match = re.search(r'[a-fA-F0-9]{64}', prev_hash)
+                if match:
+                    prev_hash = match.group(0)
+        
         return cls(
             version=data.get('version', 1),
-            prev_block_hash=data.get('prev_block_hash', ''),
+            prev_block_hash=prev_hash,
             merkle_root=data.get('merkle_root', ''),
             timestamp=data.get('timestamp', int(time.time())),
             difficulty_target=data.get('difficulty_target', settings.INITIAL_DIFFICULTY),
             nonce=data.get('nonce', 0),
-            block_height=data.get('block_height', 0),
+            block_height=int(data.get('block_height', 0)),
         )
 
 
