@@ -11,10 +11,12 @@ FIXED: Added transaction size check before sending.
 FIXED: Added UTXO consolidation for large sends.
 FIXED: Added MAX_UTXOS_PER_TX limit to prevent giant transactions.
 FIXED: DEPLOYED - July 27, 2026 - v2.3
+FIXED: v2.4 - Use smallest-first UTXO selection to prevent double-spend on change UTXOs
 """
 
 import hashlib
 import time
+import random
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 
@@ -275,7 +277,7 @@ class Wallet:
         return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
     
     # ============================================
-    # TRANSACTION CREATION - FIXED
+    # TRANSACTION CREATION - FIXED v2.4
     # ============================================
     
     # Maximum number of inputs per transaction to prevent giant transactions
@@ -289,10 +291,15 @@ class Wallet:
         amount: int,
         from_address: Optional[str] = None,
         fee: int = 0,
-        memo: str = ""
+        memo: str = "",
+        use_largest_first: bool = False  # NEW: Control UTXO selection strategy
     ) -> Tuple[bool, str, Optional[Transaction]]:
         """
         Send coins to an address.
+        
+        FIXED v2.4: Added use_largest_first parameter.
+        - When False (default): Sort by smallest first to avoid reusing change UTXOs
+        - When True: Sort by largest first (for consolidation/large sends)
         
         FIXED: UTXO selection prioritizes larger UTXOs first.
         FIXED: Transaction size check before sending.
@@ -321,9 +328,15 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. FIXED: Sort UTXOs by amount (LARGEST FIRST)
-        #    This reduces the number of inputs needed for large sends.
-        utxos.sort(key=lambda x: x['amount'], reverse=True)
+        # 4. FIXED v2.4: Sort UTXOs based on strategy
+        #    - Default (False): Smallest first - prevents reusing change UTXOs
+        #    - True: Largest first - for consolidation/large sends
+        if use_largest_first:
+            utxos.sort(key=lambda x: x['amount'], reverse=True)
+            print(f"   Strategy: Largest first")
+        else:
+            utxos.sort(key=lambda x: x['amount'])
+            print(f"   Strategy: Smallest first (prevents change UTXO reuse)")
         
         # 5. Select UTXOs to cover amount
         selected_utxos = []
