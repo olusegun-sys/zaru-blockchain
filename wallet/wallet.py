@@ -9,6 +9,7 @@ FIXED: Auto-import of mining address on startup.
 FIXED: UTXO selection - prioritize larger UTXOs to reduce transaction size.
 FIXED: Added transaction size check before sending.
 FIXED: Added UTXO consolidation for large sends.
+FIXED: Added MAX_UTXOS_PER_TX limit to prevent giant transactions.
 """
 
 import hashlib
@@ -174,7 +175,7 @@ class Wallet:
         return all_utxos
     
     # ============================================
-    # UTXO CONSOLIDATION (NEW)
+    # UTXO CONSOLIDATION
     # ============================================
     
     def consolidate_utxos(
@@ -187,6 +188,8 @@ class Wallet:
         
         WHY: Reduces transaction size for future sends by combining many small UTXOs.
         WHEN: Use when you have many small UTXOs (like from mining).
+        
+        FIXED: Uses max_inputs limit to prevent giant transactions.
         
         Args:
             address: The address to consolidate UTXOs from
@@ -201,7 +204,7 @@ class Wallet:
         if not utxos:
             return False, "No UTXOs to consolidate", None
         
-        # Check if consolidation is needed (more than 50 UTXOs)
+        # Check if consolidation is needed (more than max_inputs UTXOs)
         if len(utxos) <= max_inputs:
             return False, f"Only {len(utxos)} UTXOs, no consolidation needed", None
         
@@ -215,11 +218,7 @@ class Wallet:
         if not private_key:
             return False, f"Private key not found for {address[:10]}...", None
         
-        # Process in batches
-        total_consolidated = 0
-        total_inputs_used = 0
-        
-        # Take up to max_inputs UTXOs to consolidate
+        # FIXED: Limit to max_inputs UTXOs per transaction
         selected_utxos = utxos[:max_inputs]
         total_amount = sum(u['amount'] for u in selected_utxos)
         
@@ -275,8 +274,11 @@ class Wallet:
         return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
     
     # ============================================
-    # TRANSACTION CREATION (FIXED)
+    # TRANSACTION CREATION - FIXED
     # ============================================
+    
+    # Maximum number of inputs per transaction to prevent giant transactions
+    MAX_UTXOS_PER_TX = 100
     
     def send(
         self,
@@ -292,6 +294,7 @@ class Wallet:
         FIXED: UTXO selection prioritizes larger UTXOs first.
         FIXED: Transaction size check before sending.
         FIXED: Auto-consolidation if too many UTXOs.
+        FIXED: MAX_UTXOS_PER_TX limit to prevent giant transactions.
         """
         
         # 1. Find a sender address
@@ -328,30 +331,33 @@ class Wallet:
             selected_utxos.append(utxo)
             total_selected += utxo['amount']
             print(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
-            if total_selected >= needed:
+            
+            # FIXED: Break if we have enough OR reached max inputs
+            if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                 break
+        
+        # 5a. FIXED: Check if we need too many UTXOs
+        if len(selected_utxos) >= self.MAX_UTXOS_PER_TX and total_selected < needed:
+            print(f"⚠️ Selected {len(selected_utxos)} UTXOs but still need more funds")
+            print(f"   Need: {needed}, Have: {total_selected}")
+            print(f"   Transaction would exceed max inputs ({self.MAX_UTXOS_PER_TX})")
+            
+            # Check if consolidation would help
+            total_utxos = len(utxos)
+            if total_utxos > self.MAX_UTXOS_PER_TX * 2:
+                print(f"🔄 Auto-consolidating UTXOs first...")
+                success, msg, tx = self.consolidate_utxos(sender, max_inputs=min(50, self.MAX_UTXOS_PER_TX))
+                if success:
+                    return False, f"Auto-consolidation started. Please wait for confirmation, then try again.", tx
+                else:
+                    return False, f"Too many UTXOs ({len(selected_utxos)}+ needed). Please consolidate first.", None
+            else:
+                return False, f"Too many UTXOs needed ({len(selected_utxos)}+). Max is {self.MAX_UTXOS_PER_TX}. Please consolidate UTXOs.", None
         
         if total_selected < needed:
             return False, f"Insufficient funds: need {needed}, have {total_selected}", None
         
-        # 6. FIXED: Check if transaction would be too large
-        #    If we have more than 500 inputs, suggest consolidation
-        if len(selected_utxos) > 500:
-            print(f"⚠️ Transaction would have {len(selected_utxos)} inputs (too large!)")
-            
-            # Check if consolidation would help
-            if len(utxos) > 1000:
-                print(f"🔄 Auto-consolidating UTXOs first...")
-                success, msg, _ = self.consolidate_utxos(sender, max_inputs=100)
-                if success:
-                    return False, f"Auto-consolidation started. Please wait for confirmation, then try again.", None
-                else:
-                    return False, f"Too many UTXOs ({len(selected_utxos)}). Please consolidate first.", None
-            
-            # If we can't consolidate, reject
-            return False, f"Transaction would have {len(selected_utxos)} inputs. Max is 500. Please consolidate UTXOs.", None
-        
-        # 7. Calculate fee (auto if not specified)
+        # 6. Calculate fee (auto if not specified)
         if fee == 0:
             fee = self._calculate_fee(len(selected_utxos), 2)
             
@@ -363,10 +369,10 @@ class Wallet:
                     if utxo not in selected_utxos:
                         selected_utxos.append(utxo)
                         total_selected += utxo['amount']
-                        if total_selected >= needed:
+                        if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                             break
         
-        # 8. Create transaction inputs
+        # 7. Create transaction inputs
         inputs = []
         for utxo in selected_utxos:
             inputs.append(TxInput(
@@ -374,26 +380,26 @@ class Wallet:
                 output_index=utxo['output_index']
             ))
         
-        # 9. Create transaction outputs
+        # 8. Create transaction outputs
         outputs = [TxOutput(amount=amount, address=to_address)]
         
-        # 10. Add change output if needed
+        # 9. Add change output if needed
         change = total_selected - amount - fee
         if change > 0:
             outputs.append(TxOutput(amount=change, address=sender))
         
-        # 11. Create and sign transaction
+        # 10. Create and sign transaction
         print(f"🔍 send: creating transaction with {len(inputs)} inputs, {len(outputs)} outputs")
         tx = create_transaction(inputs, outputs, private_key)
         if not tx:
             return False, "Failed to create transaction", None
         
-        # 12. Validate transaction (this will check size)
+        # 11. Validate transaction (this will check size)
         is_valid, error = self.utxo_set.validate_transaction(tx)
         if not is_valid:
             return False, f"Transaction invalid: {error}", None
         
-        # 13. Add to mempool
+        # 12. Add to mempool
         success, message = self.mempool.add_transaction(tx)
         if not success:
             return False, f"Failed to add to mempool: {message}", None
