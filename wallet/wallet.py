@@ -29,6 +29,8 @@ from wallet.key_store import KeyStore
 class Wallet:
     """
     Complete cryptocurrency wallet.
+    
+    v2.5: Added change UTXO detection and filtering.
     """
     
     # Maximum number of inputs per transaction to prevent giant transactions
@@ -292,8 +294,8 @@ class Wallet:
         Change UTXOs are typically:
         1. Recently created (within last few blocks)
         2. Small amounts (less than typical mining rewards)
-        3. Going back to the same address
-        4. From recent transactions we know about
+        3. From recent transactions we know about
+        4. Odd amounts (not multiples of standard mining rewards)
         """
         # Check if this UTXO is from a recent transaction ID we have recorded
         utxo_tx_id = utxo.get('tx_id', '')
