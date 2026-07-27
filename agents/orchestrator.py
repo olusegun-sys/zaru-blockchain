@@ -4,7 +4,7 @@ Orchestrator
 Main orchestrator for the AI agent trading system.
 
 FIXED: v2.6 - Pop opportunity from cache before queuing to prevent duplicates
-FIXED: v2.5.1 - Stronger duplicate opportunity prevention
+FIXED: v2.6 - Coordinate with arbitrage agent deduplication
 FIXED: Track executed opportunities by token + profit (rounded)
 """
 
@@ -40,6 +40,7 @@ class Orchestrator:
         self.agents['arbitrage'] = ArbitrageAgent(self.config.get('arbitrage_agent', {}))
         self.agents['execution'] = ExecutionAgent(self.config.get('execution_agent', {}))
         print(f"✅ Initialized {len(self.agents)} agents")
+        print(f"✅ Orchestrator v2.6 - Duplicate prevention enabled")
     
     async def start(self):
         self.running = True
@@ -83,6 +84,7 @@ class Orchestrator:
                     # Additional check: look at recent execution history
                     if hasattr(execution, 'trade_history') and execution.trade_history:
                         last_trade = execution.trade_history[-1]
+                        # If same token and similar profit (within 10%), likely duplicate
                         if (last_trade.get('token') == best_op.token and 
                             abs(last_trade.get('profit', 0) - best_op.net_profit) < (best_op.net_profit * 0.10)):
                             print(f"⏭️ Skipping similar opportunity (likely duplicate): {best_op.token} - ${best_op.net_profit:.2f}")
@@ -150,11 +152,13 @@ class Orchestrator:
 async def main():
     orchestrator = Orchestrator()
     
+    # Handle shutdown gracefully
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, lambda: asyncio.create_task(orchestrator.stop()))
         except NotImplementedError:
+            # Windows doesn't support signal handlers in asyncio
             pass
     
     try:
