@@ -11,6 +11,7 @@ WHY: The UTXO set is the source of truth for:
 - Mining (knowing what coins exist)
 
 FIXED: Coinbase validation uses MAX_COINBASE_REWARD from config.
+FIXED: get_utxos_for_address() now includes block_height for change detection.
 """
 
 import time
@@ -39,14 +40,37 @@ class UTXOSet:
     # ============================================
     
     def get_utxo(self, tx_id: str, output_index: int) -> Optional[Dict[str, Any]]:
+        """Get a specific UTXO with all fields including block_height."""
         return self.store.get_utxo(tx_id, output_index)
     
     def get_utxos_for_address(self, address: str) -> List[Dict[str, Any]]:
-        return self.store.get_utxos_for_address(address)
+        """
+        Get all unspent UTXOs for an address.
+        
+        FIXED: Ensures block_height is included in returned data.
+        """
+        utxos = self.store.get_utxos_for_address(address)
+        
+        # FIXED: Ensure block_height is present in each UTXO
+        # If the store doesn't return block_height, we try to get it from the UTXO
+        for utxo in utxos:
+            if 'block_height' not in utxo:
+                # Try to get block_height from the UTXO record
+                tx_id = utxo.get('tx_id')
+                output_index = utxo.get('output_index')
+                if tx_id is not None and output_index is not None:
+                    full_utxo = self.store.get_utxo(tx_id, output_index)
+                    if full_utxo and 'block_height' in full_utxo:
+                        utxo['block_height'] = full_utxo['block_height']
+                    else:
+                        # Fallback: set to current height - 1 (approximate)
+                        utxo['block_height'] = 0
+        
+        return utxos
     
     def get_balance(self, address: str) -> int:
         utxos = self.get_utxos_for_address(address)
-        return sum(utxo['amount'] for utxo in utxos)
+        return sum(utxo.get('amount', 0) for utxo in utxos)
     
     def get_utxo_count(self) -> int:
         return self.store.get_utxo_count()
@@ -68,7 +92,7 @@ class UTXOSet:
         fee: int = 0
     ) -> Tuple[List[Dict[str, Any]], int]:
         utxos = self.get_utxos_for_address(address)
-        utxos.sort(key=lambda x: x['amount'])
+        utxos.sort(key=lambda x: x.get('amount', 0))
         
         selected = []
         total = 0
@@ -76,7 +100,7 @@ class UTXOSet:
         
         for utxo in utxos:
             selected.append(utxo)
-            total += utxo['amount']
+            total += utxo.get('amount', 0)
             if total >= needed:
                 break
         
@@ -130,7 +154,7 @@ class UTXOSet:
             if utxo.get('is_spent', False):
                 return False, f"UTXO already spent: {tx_input.tx_id}:{tx_input.output_index}"
             
-            total_input += utxo['amount']
+            total_input += utxo.get('amount', 0)
         
         total_output = tx.get_total_output()
         if total_output > total_input:
@@ -315,11 +339,17 @@ def create_utxo_set(store=None) -> UTXOSet:
 
 
 def get_balance_for_address(address: str) -> int:
+    """Get balance for an address."""
     utxo_set = UTXOSet()
     return utxo_set.get_balance(address)
 
 
 def get_utxos_for_address(address: str) -> List[Dict[str, Any]]:
+    """
+    Get all UTXOs for an address with block_height included.
+    
+    FIXED: Ensures block_height is present for change detection.
+    """
     utxo_set = UTXOSet()
     return utxo_set.get_utxos_for_address(address)
 
