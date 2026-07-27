@@ -4,15 +4,16 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
+FIXED: v2.8 - Mempool spent UTXO check to prevent double-spend
 FIXED: v2.5.1 - Improved change UTXO detection with higher threshold (10 ZARU)
 FIXED: v2.5 - Change UTXO detection and filtering
 FIXED: v2.4.1 - Smallest-first UTXO selection
-FIXED: DEPLOYED - July 27, 2026
+FIXED: DEPLOYED - July 28, 2026
 """
 
 import hashlib
 import time
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Set
 from pathlib import Path
 
 # ECDSA for key generation
@@ -31,11 +32,11 @@ class Wallet:
     """
     Complete cryptocurrency wallet.
     
-    v2.5.1: Improved change UTXO detection with 10 ZARU threshold.
+    v2.8: Added mempool spent UTXO check.
     """
     
     # Maximum number of inputs per transaction to prevent giant transactions
-    # v2.5.1: This limit prevents the wallet from creating transactions with >100 UTXOs
+    # v2.8: This limit prevents the wallet from creating transactions with >100 UTXOs
     MAX_UTXOS_PER_TX = 100
     
     # v2.5.1: Change UTXO detection threshold (10 ZARU in satoshis)
@@ -60,7 +61,7 @@ class Wallet:
         self._recent_tx_ids: List[str] = []
         self._max_recent_tx_cache = 10
         
-        print(f"✅ Wallet initialized (v2.5.1 - Improved change UTXO detection)")
+        print(f"✅ Wallet initialized (v2.8 - Mempool spent UTXO check)")
         print(f"   Keys: {len(self.key_store)}")
         print(f"   Chain height: {self.chain_manager.get_height()}")
         print(f"   Max UTXOs per tx: {self.MAX_UTXOS_PER_TX}")
@@ -350,7 +351,30 @@ class Wallet:
                 self._recent_tx_ids = self._recent_tx_ids[-self._max_recent_tx_cache:]
     
     # ============================================
-    # TRANSACTION CREATION - v2.5.1 FIXED
+    # v2.8: MEMPOOL SPENT UTXO CHECK
+    # ============================================
+    
+    def _get_spent_utxos_from_mempool(self) -> Set[str]:
+        """
+        Get UTXOs that are already spent in the mempool.
+        
+        v2.8: Prevents selecting UTXOs that are already pending.
+        """
+        spent_utxos = set()
+        try:
+            # Access the mempool's internal cache
+            if hasattr(self.mempool, '_cache'):
+                for tx_id, tx_dict in self.mempool._cache.items():
+                    for tx_input in tx_dict.get('inputs', []):
+                        key = f"{tx_input.get('tx_id')}:{tx_input.get('output_index')}"
+                        spent_utxos.add(key)
+        except Exception as e:
+            print(f"⚠️ Error getting spent UTXOs from mempool: {e}")
+        
+        return spent_utxos
+    
+    # ============================================
+    # TRANSACTION CREATION - v2.8 FIXED
     # ============================================
     
     def send(
@@ -366,10 +390,13 @@ class Wallet:
         """
         Send coins to an address.
         
+        v2.8 FIX: Filter out UTXOs that are already spent in mempool.
+        - Prevents double-spend errors
+        - Checks mempool before UTXO selection
+        
         v2.5.1 FIX: Improved change UTXO detection.
-        - Filters out UTXOs that are likely change from recent transactions
-        - Higher threshold (10 ZARU) catches larger change UTXOs
-        - Prevents reusing change UTXOs
+        v2.5 FIX: Skip change UTXOs.
+        v2.4.1 FIX: Smallest-first UTXO selection.
         
         Args:
             to_address: Recipient address
@@ -405,7 +432,28 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. v2.5.1: Filter out change UTXOs with improved detection
+        # 4. v2.8: Filter out UTXOs already spent in mempool
+        spent_in_mempool = self._get_spent_utxos_from_mempool()
+        if spent_in_mempool:
+            filtered_utxos = []
+            spent_count = 0
+            for utxo in utxos:
+                key = f"{utxo.get('tx_id')}:{utxo.get('output_index')}"
+                if key in spent_in_mempool:
+                    spent_count += 1
+                    print(f"   ⏭️ Skipping mempool-spent UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
+                    continue
+                filtered_utxos.append(utxo)
+            
+            if filtered_utxos:
+                utxos = filtered_utxos
+                print(f"   Filtered out {spent_count} UTXOs spent in mempool")
+            else:
+                # All UTXOs are spent in mempool, wait for confirmation
+                print(f"   ⚠️ All {len(utxos)} UTXOs are spent in mempool. Please wait for confirmation.")
+                return False, f"All UTXOs are pending in mempool. Please wait for confirmation.", None
+        
+        # 5. v2.5.1: Filter out change UTXOs with improved detection
         if skip_change_utxos:
             original_count = len(utxos)
             filtered_utxos = []
@@ -426,7 +474,7 @@ class Wallet:
                 print(f"   ⚠️ All UTXOs were flagged as change, using original list")
                 utxos = get_utxos_for_address(sender)
         
-        # 5. Sort UTXOs based on strategy
+        # 6. Sort UTXOs based on strategy
         if use_largest_first:
             utxos.sort(key=lambda x: x['amount'], reverse=True)
             print(f"   Strategy: Largest first")
@@ -434,7 +482,7 @@ class Wallet:
             utxos.sort(key=lambda x: x['amount'])  # Smallest first
             print(f"   Strategy: Smallest first (prevents change UTXO reuse)")
         
-        # 6. Select UTXOs to cover amount
+        # 7. Select UTXOs to cover amount
         selected_utxos = []
         total_selected = 0
         needed = amount + fee
@@ -448,7 +496,7 @@ class Wallet:
             if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                 break
         
-        # 6a. Check if we need too many UTXOs
+        # 7a. Check if we need too many UTXOs
         if len(selected_utxos) >= self.MAX_UTXOS_PER_TX and total_selected < needed:
             print(f"⚠️ Selected {len(selected_utxos)} UTXOs but still need more funds")
             print(f"   Need: {needed}, Have: {total_selected}")
@@ -469,7 +517,7 @@ class Wallet:
         if total_selected < needed:
             return False, f"Insufficient funds: need {needed}, have {total_selected}", None
         
-        # 7. Calculate fee (auto if not specified)
+        # 8. Calculate fee (auto if not specified)
         if fee == 0:
             fee = self._calculate_fee(len(selected_utxos), 2)
             
@@ -484,7 +532,7 @@ class Wallet:
                         if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                             break
         
-        # 8. Create transaction inputs
+        # 9. Create transaction inputs
         inputs = []
         for utxo in selected_utxos:
             inputs.append(TxInput(
@@ -492,31 +540,31 @@ class Wallet:
                 output_index=utxo['output_index']
             ))
         
-        # 9. Create transaction outputs
+        # 10. Create transaction outputs
         outputs = [TxOutput(amount=amount, address=to_address)]
         
-        # 10. Add change output if needed
+        # 11. Add change output if needed
         change = total_selected - amount - fee
         if change > 0:
             outputs.append(TxOutput(amount=change, address=sender))
         
-        # 11. Create and sign transaction
+        # 12. Create and sign transaction
         print(f"🔍 send: creating transaction with {len(inputs)} inputs, {len(outputs)} outputs")
         tx = create_transaction(inputs, outputs, private_key)
         if not tx:
             return False, "Failed to create transaction", None
         
-        # 12. Validate transaction (this will check size)
+        # 13. Validate transaction (this will check size)
         is_valid, error = self.utxo_set.validate_transaction(tx)
         if not is_valid:
             return False, f"Transaction invalid: {error}", None
         
-        # 13. Add to mempool
+        # 14. Add to mempool
         success, message = self.mempool.add_transaction(tx)
         if not success:
             return False, f"Failed to add to mempool: {message}", None
         
-        # 14. v2.5: Record this transaction ID to track change UTXOs
+        # 15. v2.5: Record this transaction ID to track change UTXOs
         self._record_transaction(tx)
         
         print(f"✅ Transaction sent!")
