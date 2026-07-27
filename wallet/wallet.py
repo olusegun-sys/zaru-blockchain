@@ -4,7 +4,8 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
-FIXED: v2.5 - Change UTXO detection and filtering to prevent double-spend
+FIXED: v2.5.1 - Improved change UTXO detection with higher threshold (10 ZARU)
+FIXED: v2.5 - Change UTXO detection and filtering
 FIXED: v2.4.1 - Smallest-first UTXO selection
 FIXED: DEPLOYED - July 27, 2026
 """
@@ -30,12 +31,15 @@ class Wallet:
     """
     Complete cryptocurrency wallet.
     
-    v2.5: Added change UTXO detection and filtering.
+    v2.5.1: Improved change UTXO detection with 10 ZARU threshold.
     """
     
     # Maximum number of inputs per transaction to prevent giant transactions
-    # v2.5: This limit prevents the wallet from creating transactions with >100 UTXOs
+    # v2.5.1: This limit prevents the wallet from creating transactions with >100 UTXOs
     MAX_UTXOS_PER_TX = 100
+    
+    # v2.5.1: Change UTXO detection threshold (10 ZARU in satoshis)
+    CHANGE_THRESHOLD = 1_000_000_000  # 10 ZARU
     
     def __init__(
         self,
@@ -56,10 +60,11 @@ class Wallet:
         self._recent_tx_ids: List[str] = []
         self._max_recent_tx_cache = 10
         
-        print(f"✅ Wallet initialized (v2.5 - Change UTXO filtering)")
+        print(f"✅ Wallet initialized (v2.5.1 - Improved change UTXO detection)")
         print(f"   Keys: {len(self.key_store)}")
         print(f"   Chain height: {self.chain_manager.get_height()}")
         print(f"   Max UTXOs per tx: {self.MAX_UTXOS_PER_TX}")
+        print(f"   Change threshold: {self.CHANGE_THRESHOLD / 100_000_000:.1f} ZARU")
     
     # ============================================
     # KEY AND ADDRESS MANAGEMENT
@@ -282,40 +287,53 @@ class Wallet:
         return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
     
     # ============================================
-    # v2.5: CHANGE UTXO DETECTION
+    # v2.5.1: IMPROVED CHANGE UTXO DETECTION
     # ============================================
     
     def _is_change_utxo(self, utxo: Dict[str, Any], address: str) -> bool:
         """
         Check if a UTXO is likely a change output from a recent transaction.
         
-        v2.5: Skip UTXOs that are change outputs to prevent double-spend.
+        v2.5.1: Improved detection with higher threshold and additional heuristics.
         
         Change UTXOs are typically:
         1. Recently created (within last few blocks)
-        2. Small amounts (less than typical mining rewards)
-        3. From recent transactions we know about
-        4. Odd amounts (not multiples of standard mining rewards)
+        2. Amounts less than 10 ZARU (higher threshold than before)
+        3. Odd amounts (not multiples of 50,000,000)
+        4. Smaller than the largest UTXO (change is usually smaller)
         """
-        # Check if this UTXO is from a recent transaction ID we have recorded
+        # 1. Check if this UTXO is from a recent transaction ID we have recorded
         utxo_tx_id = utxo.get('tx_id', '')
         if utxo_tx_id in self._recent_tx_ids:
             return True
         
-        # Check if this UTXO has a small amount (typical of change)
-        # Most mining UTXOs are 50,000,000 satoshis (0.5 ZARU)
-        # Change UTXOs are usually smaller or odd amounts
         amount = utxo.get('amount', 0)
         block_height = utxo.get('block_height', 0)
         current_height = self.chain_manager.get_height()
         
-        # If it's from a recent block (within last 5 blocks) and less than 1 ZARU
-        if current_height - block_height < 5 and amount < 100_000_000:
+        # 2. v2.5.1: Increased threshold to 10 ZARU (1,000,000,000 satoshis)
+        #    Change UTXOs can be larger than 1 ZARU
+        CHANGE_THRESHOLD = self.CHANGE_THRESHOLD
+        
+        # If it's from a recent block (within last 10 blocks) and less than threshold
+        if current_height - block_height < 10 and amount < CHANGE_THRESHOLD:
             return True
         
-        # If it's an odd amount (not a multiple of 50,000,000) and small
-        if amount < 100_000_000 and amount % 50_000_000 != 0:
+        # 3. If it's an odd amount (not a multiple of standard mining rewards) and small
+        #    Mining rewards are multiples of 50,000,000 (0.5 ZARU)
+        if amount < CHANGE_THRESHOLD and amount % 50_000_000 != 0:
             return True
+        
+        # 4. v2.5.1: Check if this UTXO is smaller than the largest UTXO and from a recent block
+        #    This catches change UTXOs that are larger than 10 ZARU but still change
+        if current_height - block_height < 10:
+            # Get the largest UTXO for this address (for comparison)
+            all_utxos = get_utxos_for_address(address)
+            if all_utxos:
+                largest = max(all_utxos, key=lambda x: x['amount'])
+                # If this UTXO is less than 50% of the largest and from a recent block
+                if amount < largest['amount'] * 0.5:
+                    return True
         
         return False
     
@@ -332,7 +350,7 @@ class Wallet:
                 self._recent_tx_ids = self._recent_tx_ids[-self._max_recent_tx_cache:]
     
     # ============================================
-    # TRANSACTION CREATION - v2.5 FIXED
+    # TRANSACTION CREATION - v2.5.1 FIXED
     # ============================================
     
     def send(
@@ -348,8 +366,9 @@ class Wallet:
         """
         Send coins to an address.
         
-        v2.5 FIX: Skip change UTXOs to prevent double-spend.
+        v2.5.1 FIX: Improved change UTXO detection.
         - Filters out UTXOs that are likely change from recent transactions
+        - Higher threshold (10 ZARU) catches larger change UTXOs
         - Prevents reusing change UTXOs
         
         Args:
@@ -386,7 +405,7 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. v2.5: Filter out change UTXOs
+        # 4. v2.5.1: Filter out change UTXOs with improved detection
         if skip_change_utxos:
             original_count = len(utxos)
             filtered_utxos = []
