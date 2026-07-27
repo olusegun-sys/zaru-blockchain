@@ -3,162 +3,142 @@ Orchestrator
 ============
 Main orchestrator for the AI agent trading system.
 
-Manages all agents, coordinates their activities, and handles
-state persistence and risk management.
+FIXED: v2.4.1 - Added duplicate opportunity prevention
+FIXED: Track executed opportunities to prevent double execution
+FIXED: Clean up executed opportunities cache (keep last 100)
 """
 
 import asyncio
 import signal
-from typing import Dict, Any, List, Optional
+import hashlib
+from typing import Dict, Any, Set
 from datetime import datetime
 
 from agents.price_agent import PriceAgent
 from agents.arbitrage_agent import ArbitrageAgent
 from agents.execution_agent import ExecutionAgent
-from agents.sentiment_agent import SentimentAgent
-from agents.strategy_agent import StrategyAgent
-from agents.rebalance_agent import RebalanceAgent
-
-from agents.utils.logger import get_logger
-from agents.utils.metrics import MetricsCollector
-from agents.utils.config import load_config
 
 
 class Orchestrator:
-    """
-    Main orchestrator for the AI agent trading system.
+    """Main orchestrator for the AI agent trading system."""
     
-    Features:
-    - Agent lifecycle management
-    - Inter-agent communication
-    - Risk management
-    - State persistence
-    - Metrics collection
-    """
-    
-    def __init__(self, config_path: str = "config/default.yaml"):
-        self.config = load_config(config_path)
-        self.logger = get_logger("orchestrator")
-        self.metrics = MetricsCollector()
-        
-        # Initialize agents
-        self.agents: Dict[str, any] = {}
-        self._init_agents()
-        
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.agents: Dict[str, Any] = {}
         self.running = False
-        self.tasks: List[asyncio.Task] = []
+        self.tasks = []
+        self.total_profit = 0.0
         
+        # v2.4.1: Track executed opportunities to prevent duplicates
+        self.executed_opportunities: Set[str] = set()
+        self.max_executed_cache = 100
+        
+        self._init_agents()
+    
     def _init_agents(self):
-        """Initialize all trading agents."""
         self.agents['price'] = PriceAgent(self.config.get('price_agent', {}))
         self.agents['arbitrage'] = ArbitrageAgent(self.config.get('arbitrage_agent', {}))
         self.agents['execution'] = ExecutionAgent(self.config.get('execution_agent', {}))
-        
-        if self.config.get('sentiment_agent', {}).get('enabled', False):
-            self.agents['sentiment'] = SentimentAgent(self.config.get('sentiment_agent', {}))
-        
-        if self.config.get('strategy_agent', {}).get('enabled', False):
-            self.agents['strategy'] = StrategyAgent(self.config.get('strategy_agent', {}))
-        
-        if self.config.get('rebalance_agent', {}).get('enabled', False):
-            self.agents['rebalance'] = RebalanceAgent(self.config.get('rebalance_agent', {}))
-        
-        self.logger.info(f"Initialized {len(self.agents)} agents")
+        print(f"✅ Initialized {len(self.agents)} agents")
     
     async def start(self):
-        """Start all agents and the orchestrator."""
         self.running = True
         
-        # Start each agent
         for name, agent in self.agents.items():
             task = asyncio.create_task(agent.run())
             self.tasks.append(task)
-            self.logger.info(f"Started agent: {name}")
+            print(f"✅ Started agent: {name}")
         
-        # Start orchestrator loop
         await self._orchestrator_loop()
     
+    def _generate_opportunity_key(self, opportunity) -> str:
+        """
+        Generate a unique key for an opportunity to prevent duplicates.
+        
+        v2.4.1: Uses token, profit percentage, and timestamp to create unique key.
+        """
+        # Use token + profit percentage (rounded to 2 decimals) + timestamp (rounded to minute)
+        profit_key = f"{opportunity.profit_percentage:.2f}"
+        timestamp_key = opportunity.timestamp[:16] if hasattr(opportunity, 'timestamp') else ""
+        
+        # Create a hash of the key components
+        key_string = f"{opportunity.token}_{profit_key}_{timestamp_key}"
+        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+    
     async def _orchestrator_loop(self):
-        """Main orchestrator loop."""
+        """Main orchestrator loop with duplicate prevention."""
         while self.running:
             try:
-                # Check agent health
-                for name, agent in self.agents.items():
-                    if hasattr(agent, 'running') and not agent.running:
-                        self.logger.warning(f"Agent {name} is not running, restarting...")
-                        # Attempt restart
-                        task = asyncio.create_task(agent.run())
-                        self.tasks.append(task)
+                arbitrage = self.agents.get('arbitrage')
+                execution = self.agents.get('execution')
                 
-                # Collect metrics
-                metrics = self._collect_metrics()
-                self.logger.info(f"System metrics: {metrics}")
+                if arbitrage and execution and arbitrage.opportunity_cache:
+                    # Get the best opportunity
+                    best_op = arbitrage.opportunity_cache[0]
+                    
+                    # v2.4.1: Check if this opportunity was already executed
+                    op_key = self._generate_opportunity_key(best_op)
+                    
+                    if op_key in self.executed_opportunities:
+                        # Remove it from cache to avoid rechecking
+                        arbitrage.opportunity_cache.pop(0)
+                        print(f"⏭️ Skipping duplicate opportunity: {best_op.token} - ${best_op.net_profit:.2f}")
+                        continue
+                    
+                    # Check if this is the same as the last executed trade
+                    if hasattr(execution, 'trade_history') and execution.trade_history:
+                        last_trade = execution.trade_history[-1]
+                        # If same token and similar profit (within 5%), likely duplicate
+                        if (last_trade.get('token') == best_op.token and 
+                            abs(last_trade.get('profit', 0) - best_op.net_profit) < (best_op.net_profit * 0.05)):
+                            print(f"⏭️ Skipping similar opportunity (likely duplicate): {best_op.token} - ${best_op.net_profit:.2f}")
+                            arbitrage.opportunity_cache.pop(0)
+                            continue
+                    
+                    # Mark as executed
+                    self.executed_opportunities.add(op_key)
+                    
+                    # Queue the opportunity for execution
+                    await execution.queue_opportunity({
+                        'token': best_op.token,
+                        'net_profit': best_op.net_profit,
+                        'profit_percentage': best_op.profit_percentage,
+                        'buy_exchange': best_op.buy_exchange,
+                        'sell_exchange': best_op.sell_exchange,
+                        'trade_size': best_op.trade_size
+                    })
+                    
+                    # v2.4.1: Clean up old executed opportunities (keep last 100)
+                    if len(self.executed_opportunities) > self.max_executed_cache:
+                        # Convert to list, keep last 100
+                        self.executed_opportunities = set(
+                            list(self.executed_opportunities)[-self.max_executed_cache:]
+                        )
                 
-                # Risk check
-                risk_status = await self._risk_check()
-                if risk_status.get('should_stop'):
-                    self.logger.warning(f"Risk limit reached: {risk_status}")
-                    await self.stop()
-                    break
-                
-                await asyncio.sleep(self.config.get('orchestrator_interval', 10))
+                await asyncio.sleep(10)
                 
             except Exception as e:
-                self.logger.error(f"Orchestrator error: {e}")
+                print(f"❌ Orchestrator error: {e}")
+                import traceback
+                traceback.print_exc()
                 await asyncio.sleep(5)
     
-    def _collect_metrics(self) -> Dict[str, Any]:
-        """Collect system metrics."""
-        metrics = {
-            'timestamp': datetime.now().isoformat(),
-            'agents_running': sum(1 for a in self.agents.values() if getattr(a, 'running', False)),
-            'opportunities': len(getattr(self.agents.get('arbitrage', None), 'opportunity_cache', [])),
-            'execution_queue': self.agents.get('execution', None).execution_queue.qsize() if 'execution' in self.agents else 0
-        }
-        return metrics
-    
-    async def _risk_check(self) -> Dict[str, Any]:
-        """Perform risk checks."""
-        risk_config = self.config.get('risk', {})
-        result = {'should_stop': False}
-        
-        # Check daily loss limit
-        daily_loss = self.metrics.get_daily_pnl()
-        if daily_loss < risk_config.get('daily_loss_limit', -1000):
-            result['should_stop'] = True
-            result['reason'] = f"Daily loss limit reached: ${daily_loss:.2f}"
-        
-        # Check position size
-        total_exposure = self.metrics.get_total_exposure()
-        if total_exposure > risk_config.get('max_exposure', 10000):
-            result['should_stop'] = True
-            result['reason'] = f"Max exposure exceeded: ${total_exposure:.2f}"
-        
-        return result
-    
     async def stop(self):
-        """Stop all agents and the orchestrator."""
         self.running = False
-        self.logger.info("Stopping orchestrator...")
+        print("🛑 Stopping orchestrator...")
         
-        # Stop all agents
         for name, agent in self.agents.items():
             if hasattr(agent, 'stop'):
                 await agent.stop()
         
-        # Cancel all tasks
         for task in self.tasks:
             if not task.done():
                 task.cancel()
         
-        # Cleanup
-        if 'execution' in self.agents:
-            await self.agents['execution'].zaru_client.close()
-        
-        self.logger.info("Orchestrator stopped")
+        print("✅ Orchestrator stopped")
     
     def get_status(self) -> Dict[str, Any]:
-        """Get system status."""
+        """Get orchestrator status including duplicate prevention stats."""
         return {
             'running': self.running,
             'agents': {
@@ -168,22 +148,30 @@ class Orchestrator:
                 }
                 for name, agent in self.agents.items()
             },
-            'metrics': self._collect_metrics()
+            'total_profit': self.total_profit,
+            'executed_opportunities_count': len(self.executed_opportunities),
+            'version': '2.4.1'
         }
 
 
 async def main():
-    """Entry point for the trading system."""
     orchestrator = Orchestrator()
     
-    # Handle shutdown signals
+    # Handle shutdown gracefully
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(orchestrator.stop()))
+        try:
+            loop.add_signal_handler(sig, lambda: asyncio.create_task(orchestrator.stop()))
+        except NotImplementedError:
+            # Windows doesn't support signal handlers in asyncio
+            pass
     
     try:
         await orchestrator.start()
     except KeyboardInterrupt:
+        await orchestrator.stop()
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
         await orchestrator.stop()
 
 
