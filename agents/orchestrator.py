@@ -3,9 +3,9 @@ Orchestrator
 ============
 Main orchestrator for the AI agent trading system.
 
-FIXED: v2.7 - Use exact profit for duplicate key (not rounded)
-FIXED: v2.7 - Only queue best opportunity per scan
-FIXED: v2.7 - Process all cache items before next scan
+FIXED: v2.8 - Use rounded key for duplicate detection (1 decimal)
+FIXED: v2.8 - Prevent duplicate queuing with in-flight tracking
+FIXED: v2.8 - Only process one opportunity per scan
 """
 
 import asyncio
@@ -29,9 +29,13 @@ class Orchestrator:
         self.tasks = []
         self.total_profit = 0.0
         
-        # v2.7: Track executed opportunities with exact key
+        # v2.8: Track executed opportunities with rounded key
         self.executed_opportunities: Set[str] = set()
-        self.max_executed_cache = 100
+        self.executed_timestamps: Set[str] = set()  # Track exact opportunities
+        self.max_executed_cache = 200
+        
+        # v2.8: Track in-flight opportunities to prevent duplicate queuing
+        self.in_flight: Set[str] = set()
         
         self._init_agents()
     
@@ -40,7 +44,7 @@ class Orchestrator:
         self.agents['arbitrage'] = ArbitrageAgent(self.config.get('arbitrage_agent', {}))
         self.agents['execution'] = ExecutionAgent(self.config.get('execution_agent', {}))
         print(f"✅ Initialized {len(self.agents)} agents")
-        print(f"✅ Orchestrator v2.7 - Exact duplicate key enabled")
+        print(f"✅ Orchestrator v2.8 - Enhanced duplicate prevention enabled")
     
     async def start(self):
         self.running = True
@@ -56,49 +60,64 @@ class Orchestrator:
         """
         Generate a unique key for an opportunity to prevent duplicates.
         
-        v2.7: Uses exact profit (2 decimals) + token for uniqueness.
-        This prevents different profits from being treated as duplicates.
+        v2.8: Uses rounded profit (1 decimal) for grouping.
         """
-        # Use exact profit (2 decimal places) for uniqueness
-        profit_key = f"{opportunity.profit_percentage:.2f}"
+        profit_key = round(opportunity.profit_percentage, 1)
         key_string = f"{opportunity.token}_{profit_key}"
         return hashlib.md5(key_string.encode()).hexdigest()[:16]
     
+    def _generate_exact_key(self, opportunity) -> str:
+        """
+        Generate an exact key for precise duplicate detection.
+        
+        v2.8: Uses exact profit + timestamp for uniqueness.
+        """
+        key_string = f"{opportunity.token}_{opportunity.profit_percentage:.3f}_{opportunity.timestamp}"
+        return hashlib.md5(key_string.encode()).hexdigest()[:16]
+    
     async def _orchestrator_loop(self):
-        """Main orchestrator loop with duplicate prevention."""
+        """Main orchestrator loop with enhanced duplicate prevention."""
         while self.running:
             try:
                 arbitrage = self.agents.get('arbitrage')
                 execution = self.agents.get('execution')
                 
                 if arbitrage and execution and arbitrage.opportunity_cache:
-                    # v2.7: Process ALL opportunities in the cache
-                    # But only queue the BEST one (first)
+                    # v2.8: Only process ONE opportunity per scan
                     best_op = arbitrage.opportunity_cache.pop(0)
                     
-                    # Clear the rest of the cache (we only want the best)
+                    # Clear the rest (we only want the best)
                     if arbitrage.opportunity_cache:
                         arbitrage.opportunity_cache.clear()
                     
-                    # Generate key for duplicate detection (v2.7: exact profit)
+                    # Generate keys for duplicate detection
                     op_key = self._generate_opportunity_key(best_op)
+                    exact_key = self._generate_exact_key(best_op)
                     
-                    # v2.7: Check if this opportunity was already executed
-                    if op_key in self.executed_opportunities:
-                        print(f"⏭️ Skipping duplicate opportunity: {best_op.token} - ${best_op.net_profit:.2f} (profit: {best_op.profit_percentage:.2f}%)")
+                    # v2.8: Check if this exact opportunity is already in-flight
+                    if exact_key in self.in_flight:
+                        print(f"⏭️ Opportunity already in-flight: {best_op.token} - ${best_op.net_profit:.2f}")
                         continue
                     
-                    # Check if similar opportunity was recently executed
+                    # Check if a similar opportunity was already executed
+                    if op_key in self.executed_opportunities:
+                        print(f"⏭️ Skipping duplicate opportunity: {best_op.token} - ${best_op.net_profit:.2f} (profit: {best_op.profit_percentage:.1f}%)")
+                        continue
+                    
+                    # Check if a very similar opportunity was recently executed
                     if hasattr(execution, 'trade_history') and execution.trade_history:
                         last_trade = execution.trade_history[-1]
-                        # If same token and very similar profit (within 2%), likely duplicate
                         if (last_trade.get('token') == best_op.token and 
-                            abs(last_trade.get('profit', 0) - best_op.net_profit) < (best_op.net_profit * 0.02)):
+                            abs(last_trade.get('profit', 0) - best_op.net_profit) < (best_op.net_profit * 0.01)):
                             print(f"⏭️ Skipping similar opportunity (likely duplicate): {best_op.token} - ${best_op.net_profit:.2f}")
                             continue
                     
-                    # Mark as executed BEFORE queuing
+                    # v2.8: Mark as in-flight BEFORE queuing
+                    self.in_flight.add(exact_key)
+                    
+                    # Mark as executed
                     self.executed_opportunities.add(op_key)
+                    
                     print(f"📋 Queued opportunity: {best_op.token} - ${best_op.net_profit:.2f}")
                     
                     # Queue the opportunity for execution
@@ -111,7 +130,14 @@ class Orchestrator:
                         'trade_size': best_op.trade_size
                     })
                     
-                    # v2.7: Clean up old executed opportunities (keep last 100)
+                    # v2.8: Remove from in-flight after a short delay
+                    async def remove_in_flight():
+                        await asyncio.sleep(15)  # Wait for execution to complete
+                        self.in_flight.discard(exact_key)
+                    
+                    asyncio.create_task(remove_in_flight())
+                    
+                    # v2.8: Clean up old executed opportunities
                     if len(self.executed_opportunities) > self.max_executed_cache:
                         self.executed_opportunities = set(
                             list(self.executed_opportunities)[-self.max_executed_cache:]
@@ -152,7 +178,8 @@ class Orchestrator:
             },
             'total_profit': self.total_profit,
             'executed_opportunities_count': len(self.executed_opportunities),
-            'version': '2.7'
+            'in_flight_count': len(self.in_flight),
+            'version': '2.8'
         }
 
 
