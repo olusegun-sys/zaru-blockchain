@@ -3,9 +3,9 @@ Orchestrator
 ============
 Main orchestrator for the AI agent trading system.
 
+FIXED: v2.6 - Pop opportunity from cache before queuing to prevent duplicates
 FIXED: v2.5.1 - Stronger duplicate opportunity prevention
 FIXED: Track executed opportunities by token + profit (rounded)
-FIXED: Prevent duplicate trade execution
 """
 
 import asyncio
@@ -29,7 +29,7 @@ class Orchestrator:
         self.tasks = []
         self.total_profit = 0.0
         
-        # v2.5.1: Track executed opportunities with stronger key
+        # v2.6: Track executed opportunities with stronger key
         self.executed_opportunities: Set[str] = set()
         self.max_executed_cache = 100
         
@@ -55,14 +55,9 @@ class Orchestrator:
         """
         Generate a unique key for an opportunity to prevent duplicates.
         
-        v2.5.1: Stronger key using token + profit rounded to 1 decimal.
-        This prevents the same opportunity from being executed twice
-        even if the timestamp is slightly different.
+        v2.6: Uses token + profit rounded to 1 decimal.
         """
-        # Round profit to 1 decimal place to catch similar opportunities
         profit_rounded = round(opportunity.profit_percentage, 1)
-        
-        # Create a hash of the key components
         key_string = f"{opportunity.token}_{profit_rounded}"
         return hashlib.md5(key_string.encode()).hexdigest()[:16]
     
@@ -74,30 +69,26 @@ class Orchestrator:
                 execution = self.agents.get('execution')
                 
                 if arbitrage and execution and arbitrage.opportunity_cache:
-                    # Get the best opportunity
-                    best_op = arbitrage.opportunity_cache[0]
+                    # v2.6: POP the opportunity immediately to prevent duplicates
+                    best_op = arbitrage.opportunity_cache.pop(0)
                     
-                    # v2.5.1: Generate key for duplicate detection
+                    # Generate key for duplicate detection
                     op_key = self._generate_opportunity_key(best_op)
                     
                     # Check if this opportunity was already executed
                     if op_key in self.executed_opportunities:
-                        # Remove it from cache to avoid rechecking
-                        arbitrage.opportunity_cache.pop(0)
                         print(f"⏭️ Skipping duplicate opportunity: {best_op.token} - ${best_op.net_profit:.2f} (profit: {best_op.profit_percentage:.1f}%)")
                         continue
                     
                     # Additional check: look at recent execution history
                     if hasattr(execution, 'trade_history') and execution.trade_history:
                         last_trade = execution.trade_history[-1]
-                        # If same token and similar profit (within 10%), likely duplicate
                         if (last_trade.get('token') == best_op.token and 
                             abs(last_trade.get('profit', 0) - best_op.net_profit) < (best_op.net_profit * 0.10)):
                             print(f"⏭️ Skipping similar opportunity (likely duplicate): {best_op.token} - ${best_op.net_profit:.2f}")
-                            arbitrage.opportunity_cache.pop(0)
                             continue
                     
-                    # Mark as executed
+                    # Mark as executed BEFORE queuing
                     self.executed_opportunities.add(op_key)
                     print(f"📋 Queued opportunity: {best_op.token} - ${best_op.net_profit:.2f}")
                     
@@ -111,9 +102,8 @@ class Orchestrator:
                         'trade_size': best_op.trade_size
                     })
                     
-                    # v2.5.1: Clean up old executed opportunities (keep last 100)
+                    # v2.6: Clean up old executed opportunities (keep last 100)
                     if len(self.executed_opportunities) > self.max_executed_cache:
-                        # Convert to list, keep last 100
                         self.executed_opportunities = set(
                             list(self.executed_opportunities)[-self.max_executed_cache:]
                         )
@@ -153,20 +143,18 @@ class Orchestrator:
             },
             'total_profit': self.total_profit,
             'executed_opportunities_count': len(self.executed_opportunities),
-            'version': '2.5.1'
+            'version': '2.6'
         }
 
 
 async def main():
     orchestrator = Orchestrator()
     
-    # Handle shutdown gracefully
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             loop.add_signal_handler(sig, lambda: asyncio.create_task(orchestrator.stop()))
         except NotImplementedError:
-            # Windows doesn't support signal handlers in asyncio
             pass
     
     try:
