@@ -4,8 +4,9 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
-FIXED: v2.4.1 - Smallest-first UTXO selection to prevent double-spend on change UTXOs
-FIXED: DEPLOYED - July 27, 2026 - FORCE DEPLOY
+FIXED: v2.5 - Change UTXO detection and filtering to prevent double-spend
+FIXED: v2.4.1 - Smallest-first UTXO selection
+FIXED: DEPLOYED - July 27, 2026
 """
 
 import hashlib
@@ -31,7 +32,7 @@ class Wallet:
     """
     
     # Maximum number of inputs per transaction to prevent giant transactions
-    # v2.4.1: This limit prevents the wallet from creating transactions with >100 UTXOs
+    # v2.5: This limit prevents the wallet from creating transactions with >100 UTXOs
     MAX_UTXOS_PER_TX = 100
     
     def __init__(
@@ -49,7 +50,11 @@ class Wallet:
         
         self._address_cache: Dict[str, Dict[str, Any]] = {}
         
-        print(f"✅ Wallet initialized (v2.4.1 - Smallest-first UTXO selection)")
+        # v2.5: Track recent transaction IDs to identify change UTXOs
+        self._recent_tx_ids: List[str] = []
+        self._max_recent_tx_cache = 10
+        
+        print(f"✅ Wallet initialized (v2.5 - Change UTXO filtering)")
         print(f"   Keys: {len(self.key_store)}")
         print(f"   Chain height: {self.chain_manager.get_height()}")
         print(f"   Max UTXOs per tx: {self.MAX_UTXOS_PER_TX}")
@@ -275,7 +280,57 @@ class Wallet:
         return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
     
     # ============================================
-    # TRANSACTION CREATION - v2.4.1 FIXED
+    # v2.5: CHANGE UTXO DETECTION
+    # ============================================
+    
+    def _is_change_utxo(self, utxo: Dict[str, Any], address: str) -> bool:
+        """
+        Check if a UTXO is likely a change output from a recent transaction.
+        
+        v2.5: Skip UTXOs that are change outputs to prevent double-spend.
+        
+        Change UTXOs are typically:
+        1. Recently created (within last few blocks)
+        2. Small amounts (less than typical mining rewards)
+        3. Going back to the same address
+        4. From recent transactions we know about
+        """
+        # Check if this UTXO is from a recent transaction ID we have recorded
+        utxo_tx_id = utxo.get('tx_id', '')
+        if utxo_tx_id in self._recent_tx_ids:
+            return True
+        
+        # Check if this UTXO has a small amount (typical of change)
+        # Most mining UTXOs are 50,000,000 satoshis (0.5 ZARU)
+        # Change UTXOs are usually smaller or odd amounts
+        amount = utxo.get('amount', 0)
+        block_height = utxo.get('block_height', 0)
+        current_height = self.chain_manager.get_height()
+        
+        # If it's from a recent block (within last 5 blocks) and less than 1 ZARU
+        if current_height - block_height < 5 and amount < 100_000_000:
+            return True
+        
+        # If it's an odd amount (not a multiple of 50,000,000) and small
+        if amount < 100_000_000 and amount % 50_000_000 != 0:
+            return True
+        
+        return False
+    
+    def _record_transaction(self, tx: Transaction):
+        """
+        Record a transaction to track change UTXOs.
+        
+        v2.5: Keep track of recent transaction IDs.
+        """
+        if tx:
+            self._recent_tx_ids.append(tx.tx_id)
+            # Keep only the last N transactions
+            if len(self._recent_tx_ids) > self._max_recent_tx_cache:
+                self._recent_tx_ids = self._recent_tx_ids[-self._max_recent_tx_cache:]
+    
+    # ============================================
+    # TRANSACTION CREATION - v2.5 FIXED
     # ============================================
     
     def send(
@@ -285,14 +340,15 @@ class Wallet:
         from_address: Optional[str] = None,
         fee: int = 0,
         memo: str = "",
-        use_largest_first: bool = False  # v2.4.1: Default False = smallest-first
+        use_largest_first: bool = False,
+        skip_change_utxos: bool = True  # v2.5: Skip change UTXOs
     ) -> Tuple[bool, str, Optional[Transaction]]:
         """
         Send coins to an address.
         
-        v2.4.1 FIX: Default is smallest-first UTXO selection.
-        - Prevents reusing change UTXOs from previous transactions
-        - Prevents double-spend errors on consecutive sends
+        v2.5 FIX: Skip change UTXOs to prevent double-spend.
+        - Filters out UTXOs that are likely change from recent transactions
+        - Prevents reusing change UTXOs
         
         Args:
             to_address: Recipient address
@@ -301,6 +357,7 @@ class Wallet:
             fee: Transaction fee (optional)
             memo: Transaction memo (optional)
             use_largest_first: If True, sort UTXOs largest first (for consolidation)
+            skip_change_utxos: If True, skip UTXOs that look like change
         
         Returns:
             (success, message, transaction)
@@ -327,9 +384,28 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. v2.4.1 FIX: Sort UTXOs based on strategy
-        #    Default (False): Smallest first - prevents reusing change UTXOs
-        #    True: Largest first - for consolidation/large sends
+        # 4. v2.5: Filter out change UTXOs
+        if skip_change_utxos:
+            original_count = len(utxos)
+            filtered_utxos = []
+            change_count = 0
+            
+            for utxo in utxos:
+                if self._is_change_utxo(utxo, sender):
+                    print(f"   ⏭️ Skipping change UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
+                    change_count += 1
+                    continue
+                filtered_utxos.append(utxo)
+            
+            if filtered_utxos:
+                utxos = filtered_utxos
+                print(f"   Filtered: {len(utxos)} UTXOs (skipped {change_count} change UTXOs)")
+            else:
+                # If all UTXOs were skipped, use the original list (fallback)
+                print(f"   ⚠️ All UTXOs were flagged as change, using original list")
+                utxos = get_utxos_for_address(sender)
+        
+        # 5. Sort UTXOs based on strategy
         if use_largest_first:
             utxos.sort(key=lambda x: x['amount'], reverse=True)
             print(f"   Strategy: Largest first")
@@ -337,7 +413,7 @@ class Wallet:
             utxos.sort(key=lambda x: x['amount'])  # Smallest first
             print(f"   Strategy: Smallest first (prevents change UTXO reuse)")
         
-        # 5. Select UTXOs to cover amount
+        # 6. Select UTXOs to cover amount
         selected_utxos = []
         total_selected = 0
         needed = amount + fee
@@ -351,7 +427,7 @@ class Wallet:
             if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                 break
         
-        # 5a. Check if we need too many UTXOs
+        # 6a. Check if we need too many UTXOs
         if len(selected_utxos) >= self.MAX_UTXOS_PER_TX and total_selected < needed:
             print(f"⚠️ Selected {len(selected_utxos)} UTXOs but still need more funds")
             print(f"   Need: {needed}, Have: {total_selected}")
@@ -372,7 +448,7 @@ class Wallet:
         if total_selected < needed:
             return False, f"Insufficient funds: need {needed}, have {total_selected}", None
         
-        # 6. Calculate fee (auto if not specified)
+        # 7. Calculate fee (auto if not specified)
         if fee == 0:
             fee = self._calculate_fee(len(selected_utxos), 2)
             
@@ -387,7 +463,7 @@ class Wallet:
                         if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                             break
         
-        # 7. Create transaction inputs
+        # 8. Create transaction inputs
         inputs = []
         for utxo in selected_utxos:
             inputs.append(TxInput(
@@ -395,29 +471,32 @@ class Wallet:
                 output_index=utxo['output_index']
             ))
         
-        # 8. Create transaction outputs
+        # 9. Create transaction outputs
         outputs = [TxOutput(amount=amount, address=to_address)]
         
-        # 9. Add change output if needed
+        # 10. Add change output if needed
         change = total_selected - amount - fee
         if change > 0:
             outputs.append(TxOutput(amount=change, address=sender))
         
-        # 10. Create and sign transaction
+        # 11. Create and sign transaction
         print(f"🔍 send: creating transaction with {len(inputs)} inputs, {len(outputs)} outputs")
         tx = create_transaction(inputs, outputs, private_key)
         if not tx:
             return False, "Failed to create transaction", None
         
-        # 11. Validate transaction (this will check size)
+        # 12. Validate transaction (this will check size)
         is_valid, error = self.utxo_set.validate_transaction(tx)
         if not is_valid:
             return False, f"Transaction invalid: {error}", None
         
-        # 12. Add to mempool
+        # 13. Add to mempool
         success, message = self.mempool.add_transaction(tx)
         if not success:
             return False, f"Failed to add to mempool: {message}", None
+        
+        # 14. v2.5: Record this transaction ID to track change UTXOs
+        self._record_transaction(tx)
         
         print(f"✅ Transaction sent!")
         print(f"   From: {sender[:10]}...")
