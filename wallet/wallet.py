@@ -10,6 +10,7 @@ FIXED: UTXO selection - prioritize larger UTXOs to reduce transaction size.
 FIXED: Added transaction size check before sending.
 FIXED: Added UTXO consolidation for large sends.
 FIXED: Added MAX_UTXOS_PER_TX limit to prevent giant transactions.
+FIXED: DEPLOYED - July 27, 2026 - v2.3
 """
 
 import hashlib
@@ -278,6 +279,8 @@ class Wallet:
     # ============================================
     
     # Maximum number of inputs per transaction to prevent giant transactions
+    # FIXED: This limit prevents the wallet from creating transactions with >100 UTXOs
+    # which would exceed the 1MB block size limit.
     MAX_UTXOS_PER_TX = 100
     
     def send(
@@ -333,6 +336,7 @@ class Wallet:
             print(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
             
             # FIXED: Break if we have enough OR reached max inputs
+            # This prevents the wallet from creating transactions with >100 UTXOs
             if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                 break
         
