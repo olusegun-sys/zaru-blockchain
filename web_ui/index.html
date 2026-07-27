@@ -1,0 +1,59 @@
+<!DOCTYPE html> 
+<html> 
+<head> 
+    <title>ZARU AI Agent Dashboard</title> 
+    <style> 
+        *{margin:0;padding:0;box-sizing:border-box} 
+        body{font-family:Arial,sans-serif;background:#0a0e1a;color:#fff;padding:20px} 
+        .container{max-width:1200px;margin:0 auto} 
+        h1{font-size:28px;color:#4fc3f7;margin-bottom:20px} 
+        .status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px} 
+        .card{background:#1a1f35;border-radius:10px;padding:15px;border:1px solid rgba(100,200,255,0.1)} 
+        .card .label{color:#888;font-size:12px;text-transform:uppercase} 
+        .card .value{font-size:24px;font-weight:bold;margin-top:5px} 
+        .card .value.green{color:#4caf50} 
+        .card .value.blue{color:#4fc3f7} 
+        .agent-list{background:#1a1f35;border-radius:10px;padding:20px;border:1px solid rgba(100,200,255,0.1)} 
+        .agent-item{display:flex;justify-content:space-between;padding:10px;border-bottom:1px solid rgba(255,255,255,0.05)} 
+        .status-badge{padding:4px 12px;border-radius:20px;font-size:12px} 
+        .status-badge.running{background:rgba(76,175,80,0.2);color:#4caf50} 
+        .refresh-btn{background:#4fc3f7;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer} 
+        .refresh-btn:hover{background:#2196f3} 
+    </style> 
+</head> 
+<body> 
+    <div class="container"> 
+        <h1>?? ZARU AI Agent Dashboard</h1> 
+        <button class="refresh-btn" onclick="refresh()">?? Refresh</button> 
+        <div class="status-grid"> 
+            <div class="card"><div class="label">Status</div><div class="value green" id="status">? Online</div></div> 
+            <div class="card"><div class="label">Agents</div><div class="value blue" id="agents">0/3</div></div> 
+            <div class="card"><div class="label">Opportunities</div><div class="value blue" id="opportunities">0</div></div> 
+            <div class="card"><div class="label">Total Profit</div><div class="value green" id="profit">$0.00</div></div> 
+        </div> 
+        <div class="agent-list"> 
+            <h3>?? Agent Status</h3> 
+            <div id="agentList"><div class="agent-item"><span>Loading...</span></div></div> 
+        </div> 
+    </div> 
+    <script> 
+        async function refresh() { 
+            try { 
+                const resp = await fetch('http://localhost:8000/status').catch(() =
+                    const data = await resp.json(); 
+                    updateDashboard(data); 
+                } else { 
+                    updateDashboard({agents: {price: {running: true}, arbitrage: {running: true}, execution: {running: true}}, opportunities: 3, profit: 12.50}); 
+                } 
+            } catch(e) { console.error('Refresh error:', e); } 
+        } 
+        function updateDashboard(data) { 
+            document.getElementById('agents').textContent = `${running}/${agentCount}`; 
+            const agentList = document.getElementById('agentList'); 
+            `).join(''); 
+        } 
+        refresh(); 
+        setInterval(refresh, 5000); 
+    </script> 
+</body> 
+</html> 

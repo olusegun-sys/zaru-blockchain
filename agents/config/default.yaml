@@ -1,0 +1,82 @@
+﻿# ZARU AI Agent Trading System Configuration
+
+# General settings
+orchestrator_interval: 10
+production: false  # Set to true for live trading
+
+# Risk management
+risk:
+  daily_loss_limit: -1000
+  max_exposure: 10000
+  max_position_size: 5000
+  min_profit_threshold: 1.0
+
+# Price Agent
+price_agent:
+  poll_interval: 5
+  use_websocket: true
+  cex:
+    enabled: true
+    exchange: binance
+    pairs:
+      - MATIC/USDT
+      - ETH/USDT
+      - BTC/USDT
+  dex:
+    enabled: true
+    chains:
+      - polygon
+      - ethereum
+    protocols:
+      - uniswap_v3
+      - quickswap
+  aggregator:
+    enabled: true
+    provider: 1inch
+
+# Arbitrage Agent
+arbitrage_agent:
+  min_profit_pct: 0.5
+  max_trade_size: 10000
+  slippage: 0.01
+  fee_pct: 0.003
+  scan_interval: 3
+  triangular_enabled: true
+  cross_chain_enabled: false
+
+# Execution Agent
+execution_agent:
+  production: false
+  cex:
+    exchange: binance
+  dex:
+    slippage_tolerance: 0.01
+    gas_limit: 300000
+  zaru:
+    api_url: https://zaru-api.onrender.com
+
+# Sentiment Agent (optional)
+sentiment_agent:
+  enabled: false
+  news_sources:
+    - coindesk
+    - cointelegraph
+  update_interval: 300
+
+# Strategy Agent (optional)
+strategy_agent:
+  enabled: false
+  strategies:
+    - direct_arbitrage
+    - triangular_arbitrage
+  evaluation_interval: 3600
+
+# Rebalance Agent (optional)
+rebalance_agent:
+  enabled: false
+  target_allocation:
+    BTC: 0.3
+    ETH: 0.3
+    MATIC: 0.2
+    ZARU: 0.2
+  rebalance_threshold: 0.05
