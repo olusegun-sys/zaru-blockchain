@@ -4,19 +4,12 @@ ZARU Wallet Module
 Complete wallet implementation with key management, address generation,
 transaction creation, and balance checking.
 
-FIXED: Correct imports from blockchain.utxo (not root utxo).
-FIXED: Auto-import of mining address on startup.
-FIXED: UTXO selection - prioritize larger UTXOs to reduce transaction size.
-FIXED: Added transaction size check before sending.
-FIXED: Added UTXO consolidation for large sends.
-FIXED: Added MAX_UTXOS_PER_TX limit to prevent giant transactions.
-FIXED: DEPLOYED - July 27, 2026 - v2.3
-FIXED: v2.4 - Use smallest-first UTXO selection to prevent double-spend on change UTXOs
+FIXED: v2.4.1 - Smallest-first UTXO selection to prevent double-spend on change UTXOs
+FIXED: DEPLOYED - July 27, 2026 - FORCE DEPLOY
 """
 
 import hashlib
 import time
-import random
 from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
 
@@ -37,6 +30,10 @@ class Wallet:
     Complete cryptocurrency wallet.
     """
     
+    # Maximum number of inputs per transaction to prevent giant transactions
+    # v2.4.1: This limit prevents the wallet from creating transactions with >100 UTXOs
+    MAX_UTXOS_PER_TX = 100
+    
     def __init__(
         self,
         key_store: Optional[KeyStore] = None,
@@ -52,9 +49,10 @@ class Wallet:
         
         self._address_cache: Dict[str, Dict[str, Any]] = {}
         
-        print(f"✅ Wallet initialized")
+        print(f"✅ Wallet initialized (v2.4.1 - Smallest-first UTXO selection)")
         print(f"   Keys: {len(self.key_store)}")
         print(f"   Chain height: {self.chain_manager.get_height()}")
+        print(f"   Max UTXOs per tx: {self.MAX_UTXOS_PER_TX}")
     
     # ============================================
     # KEY AND ADDRESS MANAGEMENT
@@ -277,13 +275,8 @@ class Wallet:
         return True, f"Consolidated {len(selected_utxos)} UTXOs into 1", tx
     
     # ============================================
-    # TRANSACTION CREATION - FIXED v2.4
+    # TRANSACTION CREATION - v2.4.1 FIXED
     # ============================================
-    
-    # Maximum number of inputs per transaction to prevent giant transactions
-    # FIXED: This limit prevents the wallet from creating transactions with >100 UTXOs
-    # which would exceed the 1MB block size limit.
-    MAX_UTXOS_PER_TX = 100
     
     def send(
         self,
@@ -292,19 +285,25 @@ class Wallet:
         from_address: Optional[str] = None,
         fee: int = 0,
         memo: str = "",
-        use_largest_first: bool = False  # NEW: Control UTXO selection strategy
+        use_largest_first: bool = False  # v2.4.1: Default False = smallest-first
     ) -> Tuple[bool, str, Optional[Transaction]]:
         """
         Send coins to an address.
         
-        FIXED v2.4: Added use_largest_first parameter.
-        - When False (default): Sort by smallest first to avoid reusing change UTXOs
-        - When True: Sort by largest first (for consolidation/large sends)
+        v2.4.1 FIX: Default is smallest-first UTXO selection.
+        - Prevents reusing change UTXOs from previous transactions
+        - Prevents double-spend errors on consecutive sends
         
-        FIXED: UTXO selection prioritizes larger UTXOs first.
-        FIXED: Transaction size check before sending.
-        FIXED: Auto-consolidation if too many UTXOs.
-        FIXED: MAX_UTXOS_PER_TX limit to prevent giant transactions.
+        Args:
+            to_address: Recipient address
+            amount: Amount in satoshis
+            from_address: Sender address (optional)
+            fee: Transaction fee (optional)
+            memo: Transaction memo (optional)
+            use_largest_first: If True, sort UTXOs largest first (for consolidation)
+        
+        Returns:
+            (success, message, transaction)
         """
         
         # 1. Find a sender address
@@ -328,14 +327,14 @@ class Wallet:
         
         print(f"🔍 Found {len(utxos)} UTXOs for {sender[:10]}...")
         
-        # 4. FIXED v2.4: Sort UTXOs based on strategy
-        #    - Default (False): Smallest first - prevents reusing change UTXOs
-        #    - True: Largest first - for consolidation/large sends
+        # 4. v2.4.1 FIX: Sort UTXOs based on strategy
+        #    Default (False): Smallest first - prevents reusing change UTXOs
+        #    True: Largest first - for consolidation/large sends
         if use_largest_first:
             utxos.sort(key=lambda x: x['amount'], reverse=True)
             print(f"   Strategy: Largest first")
         else:
-            utxos.sort(key=lambda x: x['amount'])
+            utxos.sort(key=lambda x: x['amount'])  # Smallest first
             print(f"   Strategy: Smallest first (prevents change UTXO reuse)")
         
         # 5. Select UTXOs to cover amount
@@ -348,12 +347,11 @@ class Wallet:
             total_selected += utxo['amount']
             print(f"   UTXO: {utxo['tx_id'][:16]}... amt: {utxo['amount']}")
             
-            # FIXED: Break if we have enough OR reached max inputs
-            # This prevents the wallet from creating transactions with >100 UTXOs
+            # Break if we have enough OR reached max inputs
             if total_selected >= needed or len(selected_utxos) >= self.MAX_UTXOS_PER_TX:
                 break
         
-        # 5a. FIXED: Check if we need too many UTXOs
+        # 5a. Check if we need too many UTXOs
         if len(selected_utxos) >= self.MAX_UTXOS_PER_TX and total_selected < needed:
             print(f"⚠️ Selected {len(selected_utxos)} UTXOs but still need more funds")
             print(f"   Need: {needed}, Have: {total_selected}")
