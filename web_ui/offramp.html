@@ -1,0 +1,157 @@
+<!DOCTYPE html> 
+<html> 
+<head> 
+    <title>ZARU Off-Ramp - Cash Out to Naira</title> 
+    <style> 
+        *{margin:0;padding:0;box-sizing:border-box} 
+        body{font-family:Arial,sans-serif;background:#0a0e1a;color:#fff;padding:20px} 
+        .container{max-width:500px;margin:0 auto;background:#1a1f35;border-radius:20px;padding:30px} 
+        h1{color:#4fc3f7;margin-bottom:5px} 
+        .subtitle{color:#888;font-size:14px;margin-bottom:20px} 
+        .card{background:rgba(0,0,0,0.2);border-radius:12px;padding:15px;margin-bottom:15px} 
+        .card label{color:#888;font-size:12px;display:block;margin-bottom:5px} 
+        .card input{width:100%;padding:10px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:16px} 
+        .card input:focus{border-color:#4fc3f7;outline:none} 
+        .btn{width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:bold;cursor:pointer;transition:0.3s} 
+        .btn-primary{background:linear-gradient(135deg,#4fc3f7,#2196f3);color:#fff} 
+        .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(79,195,247,0.3)} 
+        .btn-success{background:linear-gradient(135deg,#66bb6a,#43a047);color:#fff} 
+        .rate-display{text-align:center;padding:20px;background:rgba(79,195,247,0.08);border-radius:12px;margin:15px 0} 
+        .rate-display .big{font-size:32px;font-weight:bold;color:#4fc3f7} 
+        .status{text-align:center;padding:10px;border-radius:8px;margin:10px 0;display:none} 
+        .status.success{display:block;background:rgba(76,175,80,0.2);color:#4caf50;border:1px solid rgba(76,175,80,0.3)} 
+        .status.error{display:block;background:rgba(244,67,54,0.2);color:#f44336;border:1px solid rgba(244,67,54,0.3)} 
+        .status.loading{display:block;background:rgba(255,193,7,0.2);color:#ffc107;border:1px solid rgba(255,193,7,0.3)} 
+        .steps{color:#888;font-size:12px;margin-top:20px;padding:15px;background:rgba(0,0,0,0.2);border-radius:10px} 
+        .steps li{margin:5px 0;list-style:decimal;padding-left:5px} 
+    </style> 
+</head> 
+<body> 
+    <div class="container"> 
+        <h1>?? ZARU Off-Ramp</h1> 
+        <div class="subtitle">Swap ZARU  USDT  Naira  Your Bank</div> 
+ 
+        <div class="rate-display"> 
+            <div>Exchange Rate</div> 
+            <div class="big" id="rateDisplay">Loading...</div> 
+            <div style="color:#888;font-size:12px">1 ZARU = X USDT</div> 
+        </div> 
+ 
+        <div id="status" class="status"></div> 
+ 
+        <div class="card"> 
+            <label>ZARU Amount (satoshis)</label> 
+            <input type="number" id="zaruAmount" placeholder="100000000" value="100000000"> 
+        </div> 
+ 
+        <div class="card"> 
+            <label>Your ZARU Address</label> 
+            <input type="text" id="zaruAddress" placeholder="0x... or paste address"> 
+        </div> 
+ 
+        <button class="btn btn-primary" onclick="swapAndWithdraw()" id="swapBtn"> 
+        </button> 
+ 
+        <hr style="border-color:rgba(255,255,255,0.05);margin:15px 0"> 
+ 
+        <button class="btn btn-success" onclick="getDepositAddress()"> 
+            ?? Get USDT Deposit Address 
+        </button> 
+ 
+        <div style="margin-top:10px"> 
+            <button class="btn" style="background:rgba(255,255,255,0.05);color:#888" onclick="refreshRate()"> 
+                ?? Refresh Rate 
+            </button> 
+        </div> 
+ 
+        <div class="steps"> 
+            <strong>?? How it works:</strong> 
+            <li>1. Enter ZARU amount and your address</li> 
+            <li>2. Click "Swap & Withdraw"</li> 
+            <li>3. ZARU is swapped to USDT</li> 
+            <li>4. USDT is sent to Monica Cash</li> 
+            <li>5. Monica converts to Naira</li> 
+            <li>6. Naira hits your bank account in under 60s!</li> 
+        </div> 
+    </div> 
+ 
+    <script> 
+        const API = 'https://zaru-api.onrender.com'; 
+ 
+        async function refreshRate() { 
+            try { 
+                const resp = await fetch(API + '/offramp/rate'); 
+                const data = await resp.json(); 
+                document.getElementById('rateDisplay').textContent = data.rate; 
+            } catch(e) { 
+                document.getElementById('rateDisplay').textContent = 'Error loading rate'; 
+            } 
+        } 
+ 
+        function setStatus(msg, type) { 
+            const el = document.getElementById('status'); 
+            el.textContent = msg; 
+            el.className = 'status ' + type; 
+        } 
+ 
+        async function swapAndWithdraw() { 
+            const amount = document.getElementById('zaruAmount').value; 
+            const address = document.getElementById('zaruAddress').value.trim(); 
+ 
+                setStatus('Please enter a valid ZARU amount', 'error'); 
+                return; 
+            } 
+            if (!address) { 
+                setStatus('Please enter your ZARU address', 'error'); 
+                return; 
+            } 
+ 
+            setStatus('?? Swapping ZARU to USDT...', 'loading'); 
+            document.getElementById('swapBtn').disabled = true; 
+ 
+            try { 
+                const resp = await fetch(API + '/offramp/swap', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ 
+                        zaru_amount: parseInt(amount), 
+                        from_address: address 
+                    }) 
+                }); 
+                const data = await resp.json(); 
+ 
+                if (!resp.ok) { 
+                    document.getElementById('swapBtn').disabled = false; 
+                    return; 
+                } 
+ 
+                setStatus('? Swap successful! USDT sent to Monica. Waiting for Naira...', 'success'); 
+                document.getElementById('swapBtn').disabled = false; 
+ 
+            } catch(e) { 
+                setStatus('? Error: ' + e.message, 'error'); 
+                document.getElementById('swapBtn').disabled = false; 
+            } 
+        } 
+ 
+        async function getDepositAddress() { 
+            try { 
+                const resp = await fetch(API + '/offramp/deposit-address'); 
+                const data = await resp.json(); 
+                    setStatus('?? USDT Deposit Address: ' + addr, 'success'); 
+                    navigator.clipboard.writeText(addr).then(() =
+                        setStatus('?? Address copied to clipboard!', 'success'); 
+                    }); 
+                } else { 
+                    setStatus('? Failed to get deposit address', 'error'); 
+                } 
+            } catch(e) { 
+                setStatus('? Error: ' + e.message, 'error'); 
+            } 
+        } 
+ 
+        refreshRate(); 
+        setInterval(refreshRate, 30000); 
+    </script> 
+</body> 
+</html> 
