@@ -19,8 +19,8 @@ from typing import Dict, Any, Optional, List
 import aiohttp
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from root .env file
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
 
 
 class BybitClient:
@@ -54,6 +54,7 @@ class BybitClient:
         
         self.session = None
         self.recv_window = "5000"
+        self._connected = False
         
         print(f"🔗 BybitClient initialized")
         print(f"   Environment: {'TESTNET' if self.testnet else 'PRODUCTION'}")
@@ -121,25 +122,34 @@ class BybitClient:
                 'volume': 1234567.89
             }
         """
-        session = await self._get_session()
+        if not self.api_key or not self.api_secret:
+            return {"symbol": symbol, "price": 0.0, "error": "API keys not configured"}
         
-        async with session.get(
-            f"{self.base_url}/v5/market/tickers",
-            params={"category": "spot", "symbol": symbol}
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("retCode") == 0:
-                    ticker = data["result"]["list"][0]
-                    return {
-                        "symbol": ticker.get("symbol", symbol),
-                        "price": float(ticker.get("lastPrice", 0)),
-                        "bid": float(ticker.get("bid1Price", 0)),
-                        "ask": float(ticker.get("ask1Price", 0)),
-                        "volume": float(ticker.get("volume24h", 0)),
-                        "high": float(ticker.get("highPrice24h", 0)),
-                        "low": float(ticker.get("lowPrice24h", 0))
-                    }
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.base_url}/v5/market/tickers",
+                params={"category": "spot", "symbol": symbol},
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("retCode") == 0 and data.get("result", {}).get("list"):
+                        ticker = data["result"]["list"][0]
+                        self._connected = True
+                        return {
+                            "symbol": ticker.get("symbol", symbol),
+                            "price": float(ticker.get("lastPrice", 0)),
+                            "bid": float(ticker.get("bid1Price", 0)),
+                            "ask": float(ticker.get("ask1Price", 0)),
+                            "volume": float(ticker.get("volume24h", 0)),
+                            "high": float(ticker.get("highPrice24h", 0)),
+                            "low": float(ticker.get("lowPrice24h", 0))
+                        }
+                return {"symbol": symbol, "price": 0.0}
+        except Exception as e:
+            print(f"⚠️ Error fetching {symbol}: {e}")
             return {"symbol": symbol, "price": 0.0}
     
     async def get_multiple_tickers(self, symbols: List[str]) -> Dict[str, Dict]:
@@ -158,21 +168,26 @@ class BybitClient:
             interval: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
             limit: Number of candles (max 1000)
         """
-        session = await self._get_session()
-        
-        async with session.get(
-            f"{self.base_url}/v5/market/kline",
-            params={
-                "category": "spot",
-                "symbol": symbol,
-                "interval": interval,
-                "limit": limit
-            }
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("retCode") == 0:
-                    return data["result"]["list"]
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.base_url}/v5/market/kline",
+                params={
+                    "category": "spot",
+                    "symbol": symbol,
+                    "interval": interval,
+                    "limit": limit
+                },
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("retCode") == 0:
+                        return data["result"]["list"]
+                return []
+        except Exception as e:
+            print(f"⚠️ Error fetching klines for {symbol}: {e}")
             return []
     
     # ============================================
@@ -210,14 +225,18 @@ class BybitClient:
         if test:
             params["test"] = "1"
         
-        session = await self._get_session()
-        
-        async with session.post(
-            f"{self.base_url}/v5/order/create",
-            headers=self._get_headers(params),
-            json=params
-        ) as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            
+            async with session.post(
+                f"{self.base_url}/v5/order/create",
+                headers=self._get_headers(params),
+                json=params,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                return await resp.json()
+        except Exception as e:
+            return {"retCode": -1, "retMsg": str(e)}
     
     async def place_limit_order(
         self,
@@ -250,38 +269,52 @@ class BybitClient:
         if test:
             params["test"] = "1"
         
-        session = await self._get_session()
-        
-        async with session.post(
-            f"{self.base_url}/v5/order/create",
-            headers=self._get_headers(params),
-            json=params
-        ) as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            
+            async with session.post(
+                f"{self.base_url}/v5/order/create",
+                headers=self._get_headers(params),
+                json=params,
+                timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
+                return await resp.json()
+        except Exception as e:
+            return {"retCode": -1, "retMsg": str(e)}
     
     async def get_order(self, order_id: str) -> Dict[str, Any]:
         """Get order details by ID."""
         params = {"category": "spot", "orderId": order_id}
-        session = await self._get_session()
         
-        async with session.get(
-            f"{self.base_url}/v5/order/info",
-            headers=self._get_headers(params),
-            params=params
-        ) as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.base_url}/v5/order/info",
+                headers=self._get_headers(params),
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                return await resp.json()
+        except Exception as e:
+            return {"retCode": -1, "retMsg": str(e)}
     
     async def cancel_order(self, order_id: str) -> Dict[str, Any]:
         """Cancel an order by ID."""
         params = {"category": "spot", "orderId": order_id}
-        session = await self._get_session()
         
-        async with session.post(
-            f"{self.base_url}/v5/order/cancel",
-            headers=self._get_headers(params),
-            json=params
-        ) as resp:
-            return await resp.json()
+        try:
+            session = await self._get_session()
+            
+            async with session.post(
+                f"{self.base_url}/v5/order/cancel",
+                headers=self._get_headers(params),
+                json=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                return await resp.json()
+        except Exception as e:
+            return {"retCode": -1, "retMsg": str(e)}
     
     # ============================================
     # ACCOUNT INFO
@@ -290,35 +323,47 @@ class BybitClient:
     async def get_balance(self, asset: str = "USDT") -> float:
         """Get balance for a specific asset."""
         params = {"accountType": "UNIFIED", "coin": asset}
-        session = await self._get_session()
         
-        async with session.get(
-            f"{self.base_url}/v5/account/wallet-balance",
-            headers=self._get_headers(params),
-            params=params
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("retCode") == 0:
-                    for coin in data["result"]["list"][0]["coin"]:
-                        if coin["coin"] == asset:
-                            return float(coin["walletBalance"])
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.base_url}/v5/account/wallet-balance",
+                headers=self._get_headers(params),
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("retCode") == 0:
+                        for coin in data["result"]["list"][0]["coin"]:
+                            if coin["coin"] == asset:
+                                return float(coin["walletBalance"])
+                return 0.0
+        except Exception as e:
+            print(f"⚠️ Error getting balance: {e}")
             return 0.0
     
     async def get_positions(self) -> List[Dict]:
         """Get current positions."""
         params = {"category": "spot"}
-        session = await self._get_session()
         
-        async with session.get(
-            f"{self.base_url}/v5/position/list",
-            headers=self._get_headers(params),
-            params=params
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get("retCode") == 0:
-                    return data["result"]["list"]
+        try:
+            session = await self._get_session()
+            
+            async with session.get(
+                f"{self.base_url}/v5/position/list",
+                headers=self._get_headers(params),
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("retCode") == 0:
+                        return data["result"]["list"]
+                return []
+        except Exception as e:
+            print(f"⚠️ Error getting positions: {e}")
             return []
     
     # ============================================
@@ -332,11 +377,21 @@ class BybitClient:
     
     async def test_connection(self) -> bool:
         """Test if API keys are valid."""
+        if not self.api_key or not self.api_secret:
+            print("⚠️ API keys not configured")
+            return False
+        
         try:
             price = await self.get_ticker("MATICUSDT")
-            return price.get("price", 0) > 0
+            if price.get("price", 0) > 0:
+                self._connected = True
+                print(f"✅ Bybit connection successful! Price: ${price.get('price', 0):.4f}")
+                return True
+            else:
+                print("⚠️ Bybit connection failed: No price data")
+                return False
         except Exception as e:
-            print(f"⚠️ Connection test failed: {e}")
+            print(f"⚠️ Bybit connection test failed: {e}")
             return False
 
 

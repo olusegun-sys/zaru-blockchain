@@ -5,6 +5,7 @@ Monitors prices across CEX and DEX exchanges in real-time.
 
 UPDATED: Uses real Bybit API for price data.
 UPDATED: Multiple symbol support.
+UPDATED: Better error handling and fallback.
 """
 
 import asyncio
@@ -33,6 +34,7 @@ class PriceAgent(BaseAgent):
         # Price cache
         self.price_cache: Dict[str, Dict[str, float]] = {}
         self.historical_prices: Dict[str, List[Dict]] = {}
+        self._use_real_prices = False
         
         # Configuration
         self.poll_interval = config.get('poll_interval', 5)
@@ -48,12 +50,16 @@ class PriceAgent(BaseAgent):
         
         # Test connection first
         connected = await self.bybit.test_connection()
-        if not connected:
-            print("⚠️ Warning: Could not connect to Bybit API. Check your API keys.")
+        if connected:
+            self._use_real_prices = True
+            print("✅ Using REAL Bybit prices")
+        else:
+            self._use_real_prices = False
+            print("⚠️ Using SIMULATED prices (Bybit connection failed)")
         
         while self.running:
             try:
-                # Fetch real prices from Bybit
+                # Fetch prices from Bybit or use simulated
                 prices = await self._fetch_prices()
                 
                 # Update cache
@@ -73,7 +79,7 @@ class PriceAgent(BaseAgent):
     
     async def _fetch_prices(self) -> Dict[str, Dict[str, float]]:
         """
-        Fetch prices from Bybit.
+        Fetch prices from Bybit or use simulated fallback.
         
         Returns:
             {
@@ -85,28 +91,36 @@ class PriceAgent(BaseAgent):
         
         for symbol in self.symbols:
             try:
-                ticker = await self.bybit.get_ticker(symbol)
-                price = ticker.get('price', 0)
-                
-                if price > 0:
-                    # Simulate DEX price (slightly higher/lower for arbitrage detection)
-                    dex_spread = random.uniform(-0.005, 0.005)  # 0.5% spread
-                    dex_price = price * (1 + dex_spread)
+                if self._use_real_prices:
+                    ticker = await self.bybit.get_ticker(symbol)
+                    price = ticker.get('price', 0)
                     
-                    prices[symbol] = {
-                        'cex': price,
-                        'dex': dex_price,
-                        'bid': ticker.get('bid', price),
-                        'ask': ticker.get('ask', price),
-                        'volume': ticker.get('volume', 0)
-                    }
+                    if price > 0:
+                        # Simulate DEX price (slightly higher/lower for arbitrage detection)
+                        dex_spread = random.uniform(-0.005, 0.005)  # 0.5% spread
+                        dex_price = price * (1 + dex_spread)
+                        
+                        prices[symbol] = {
+                            'cex': price,
+                            'dex': dex_price,
+                            'bid': ticker.get('bid', price),
+                            'ask': ticker.get('ask', price),
+                            'volume': ticker.get('volume', 0),
+                            'source': 'bybit'
+                        }
+                    else:
+                        # Fallback: use simulated price if API returns zero
+                        prices[symbol] = self._generate_fallback_price(symbol)
+                        prices[symbol]['source'] = 'fallback'
                 else:
-                    # Fallback: use simulated price if API fails
+                    # Use simulated prices
                     prices[symbol] = self._generate_fallback_price(symbol)
+                    prices[symbol]['source'] = 'simulated'
                     
             except Exception as e:
                 print(f"⚠️ Error fetching {symbol}: {e}")
                 prices[symbol] = self._generate_fallback_price(symbol)
+                prices[symbol]['source'] = 'fallback'
         
         return prices
     
@@ -127,7 +141,10 @@ class PriceAgent(BaseAgent):
         
         return {
             'cex': price,
-            'dex': price * (1 + random.uniform(-0.003, 0.003))
+            'dex': price * (1 + random.uniform(-0.003, 0.003)),
+            'bid': price * 0.999,
+            'ask': price * 1.001,
+            'volume': random.uniform(100000, 1000000)
         }
     
     def _update_price_cache(self, prices: Dict[str, Dict[str, float]]):
@@ -143,7 +160,8 @@ class PriceAgent(BaseAgent):
                 'timestamp': datetime.now().isoformat(),
                 'cex': price_data.get('cex', 0),
                 'dex': price_data.get('dex', 0),
-                'spread': self._calculate_spread(price_data)
+                'spread': self._calculate_spread(price_data),
+                'source': price_data.get('source', 'unknown')
             })
             
             # Keep only last 1000 entries
@@ -162,10 +180,12 @@ class PriceAgent(BaseAgent):
         """Log significant price changes."""
         for symbol, price_data in prices.items():
             cex = price_data.get('cex', 0)
+            source = price_data.get('source', 'unknown')
             if cex > 0:
                 spread = self._calculate_spread(price_data)
-                if abs(spread) > 0.5:  # > 0.5% spread
-                    print(f"💰 {symbol}: CEX ${cex:.4f} | Spread: {spread:.2f}%")
+                status = "🔵" if source == "bybit" else "🟡"
+                if abs(spread) > 0.3:  # > 0.3% spread
+                    print(f"{status} {symbol}: CEX ${cex:.4f} | Spread: {spread:.2f}% | Source: {source}")
     
     # ============================================
     # PUBLIC METHODS
@@ -188,6 +208,10 @@ class PriceAgent(BaseAgent):
         """Get historical prices for a symbol."""
         hist = self.historical_prices.get(symbol, [])
         return hist[-limit:] if hist else []
+    
+    async def is_connected(self) -> bool:
+        """Check if connected to Bybit."""
+        return self._use_real_prices
     
     async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Process price request."""
@@ -229,5 +253,6 @@ class PriceAgent(BaseAgent):
             'running': self.running,
             'symbols': self.symbols,
             'price_count': len(self.price_cache),
-            'api_connected': self.bybit is not None
+            'api_connected': self._use_real_prices,
+            'source': 'bybit' if self._use_real_prices else 'simulated'
         }
