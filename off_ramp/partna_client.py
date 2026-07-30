@@ -1,4 +1,4 @@
-Partna Off-Ramp Client (Backup) 
+﻿Partna Off-Ramp Client (Backup) 
 ============================== 
 Backup integration if Monica Cash is unavailable. 
  
