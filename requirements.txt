@@ -1,28 +1,49 @@
-# HTTP & Async
-aiohttp>=3.9.0
-websockets>=12.0
-requests>=2.31.0
+# ============================================
+# ZARU DEPENDENCIES
+# ============================================
+# Core blockchain, API, miner, and agent dependencies
+# ============================================
 
-# Environment & Config
-python-dotenv>=1.0.0
-pyyaml>=6.0
+# ------------------------------------------------------------------
+# HTTP & Async (for API, off-ramp, and agent integrations)
+# ------------------------------------------------------------------
+aiohttp>=3.9.0          # Async HTTP client (monica_client, bybit_client)
+websockets>=12.0        # WebSocket support (bybit_client)
+requests>=2.31.0        # Sync HTTP requests
 
-# Pydantic (data validation)
-pydantic>=2.0.0
-pydantic-core>=2.0.0
-typing-extensions>=4.8.0
+# ------------------------------------------------------------------
+# Web Frameworks (API + Miner health checks)
+# ------------------------------------------------------------------
+flask>=2.0.0            # Web framework for miner health checks (web_worker.py)
+fastapi>=0.100.0        # Web framework for API
+uvicorn>=0.23.0         # ASGI server for FastAPI
+python-multipart>=0.0.6 # Form data parsing for FastAPI
 
+# ------------------------------------------------------------------
+# Environment & Configuration
+# ------------------------------------------------------------------
+python-dotenv>=1.0.0    # Load .env files
+pyyaml>=6.0             # YAML parsing (agent config)
+
+# ------------------------------------------------------------------
+# Data Validation
+# ------------------------------------------------------------------
+pydantic>=2.0.0         # Data validation (FastAPI models)
+pydantic-core>=2.0.0    # Core validation engine
+typing-extensions>=4.8.0 # Type hints
+
+# ------------------------------------------------------------------
 # Database
-psycopg2-binary>=2.9.0
+# ------------------------------------------------------------------
+psycopg2-binary>=2.9.0  # PostgreSQL adapter
 
-# Cryptography
-ecdsa>=0.18.0
-cryptography>=41.0.0
+# ------------------------------------------------------------------
+# Cryptography & Security
+# ------------------------------------------------------------------
+ecdsa>=0.18.0           # ECDSA signatures (secp256k1)
+cryptography>=41.0.0    # AES encryption (wallet)
 
-# API & Server
-fastapi>=0.100.0
-uvicorn>=0.23.0
-python-multipart>=0.0.6
-
+# ------------------------------------------------------------------
 # Utilities
-python-json-logger>=2.0.0
+# ------------------------------------------------------------------
+python-json-logger>=2.0.0 # Structured logging
