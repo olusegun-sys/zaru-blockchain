@@ -1,5 +1,11 @@
-Utility Functions 
-================= 
-Helper functions for the agent system. 
- 
-__all__ = [] 
+"""
+Utility Functions
+=================
+Helper functions for the agent system.
+
+- Math utilities
+- Logging
+- Metrics collection
+"""
+
+__all__ = []
