@@ -4,6 +4,8 @@ ZARU API Main Module
 FastAPI application setup and configuration.
 
 CORS: Explicitly configured to allow all origins.
+ADDED: Off-ramp routes for ZARU → USDT → Naira conversion.
+ADDED: Agent-to-Agent API for selling trading signals to other AI agents.
 """
 
 import sys
@@ -18,6 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from api.routes import router
+
+# ADDED: Off-ramp router
+from off_ramp.routes import router as offramp_router
+
+# ADDED: Agent-to-Agent API
+from agents.agent_api import app as agent_app
 
 
 # ============================================
@@ -71,9 +79,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ZARU API",
     description="ZARU Cryptocurrency REST API",
-    version="1.0.0",
+    version="2.9.0",
     lifespan=lifespan
 )
+
 
 # ============================================
 # CORS MIDDLEWARE - EXPLICITLY ALLOW ALL
@@ -91,10 +100,22 @@ print("🌐 CORS: Allowing all origins")
 
 
 # ============================================
-# INCLUDE ROUTER
+# INCLUDE ROUTERS
 # ============================================
 
+# Main API routes
 app.include_router(router)
+
+# Off-ramp routes (ZARU → USDT → Naira)
+app.include_router(offramp_router)
+
+# Agent-to-Agent API (for selling trading signals to other AI agents)
+app.mount("/zaru", agent_app)
+
+print("✅ Agent-to-Agent API mounted at /zaru")
+print("   - GET /zaru/agent/signal - Get trading signal")
+print("   - GET /zaru/agent/status - Get agent status")
+print("   - GET /zaru/agent/balance - Get agent balance")
 
 
 # ============================================
@@ -106,7 +127,7 @@ async def root():
     """Root endpoint - API information."""
     return {
         "name": "ZARU API",
-        "version": "1.0.0",
+        "version": "2.9.0",
         "status": "running",
         "environment": "testnet" if settings.IS_TESTNET else "mainnet",
         "endpoints": {
@@ -114,6 +135,8 @@ async def root():
             "blockchain": "/blockchain",
             "mining": "/mining",
             "network": "/network",
+            "offramp": "/offramp",
+            "agent_api": "/zaru/agent"
         }
     }
 
@@ -134,7 +157,8 @@ async def health():
         "mempool_size": mempool.get_mempool_size(),
         "peer_count": node.get_peer_count() if hasattr(node, 'get_peer_count') else 0,
         "is_mining": False,
-        "network_enabled": is_running
+        "network_enabled": is_running,
+        "version": "2.9.0"
     }
 
 
