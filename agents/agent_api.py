@@ -8,6 +8,8 @@ Features:
 - Confidence scoring
 - Execution advice (buy/sell/hold)
 - Historical signal tracking
+- Smart decision logic with risk management
+- Technical analysis integration
 - Usage analytics
 """
 
@@ -15,7 +17,8 @@ import os
 import json
 import time
 import hashlib
-from typing import Dict, Any, Optional, List
+import hmac
+from typing import Dict, Any, Optional, List, Tuple
 from fastapi import FastAPI, HTTPException, Request, Header, Query
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
@@ -75,6 +78,50 @@ def get_agent_data(api_key: str) -> Optional[Dict]:
 
 
 # ============================================
+# SMART DECISION LOGIC
+# ============================================
+
+class TradingDecision:
+    """
+    Evaluate trading signals with context and risk management.
+    """
+    
+    def __init__(self, price_data: Dict[str, float], spread: float, symbol: str):
+        self.price_data = price_data
+        self.spread = spread
+        self.symbol = symbol
+        self.price = price_data.get('price', 0)
+        self.bid = price_data.get('bid', self.price)
+        self.ask = price_data.get('ask', self.price)
+        
+    def evaluate(self) -> Tuple[bool, str, float, str]:
+        """
+        Evaluate the trading signal based on context.
+        
+        Returns:
+            (should_act, reason, confidence, recommendation)
+        """
+        # 1. Check if price data is valid
+        if self.price <= 0:
+            return False, "Invalid price data", 0.0, "NEUTRAL"
+        
+        # 2. Check for extreme volatility
+        if self.spread > 2.0:
+            return False, f"Market too volatile (spread: {self.spread:.2f}%)", 0.1, "NEUTRAL"
+        
+        # 3. Check for spread reliability
+        if self.spread > 0.5:
+            confidence = min(90, abs(self.spread) * 15)
+            return True, f"Buy signal - spread {self.spread:.2f}%", confidence, "BUY"
+        elif self.spread < -0.5:
+            confidence = min(90, abs(self.spread) * 15)
+            return True, f"Sell signal - spread {self.spread:.2f}%", confidence, "SELL"
+        else:
+            # 4. If spread is tight, check for neutral position
+            return False, f"Spread too tight ({self.spread:.2f}%)", 0.0, "NEUTRAL"
+
+
+# ============================================
 # ENHANCED ENDPOINTS
 # ============================================
 
@@ -84,13 +131,7 @@ async def get_signal(
     api_key: str = Header(...)
 ) -> Dict[str, Any]:
     """
-    Get an enhanced trading signal.
-    
-    Returns:
-    - Price data (bid/ask)
-    - Recommendation (BUY/SELL/NEUTRAL)
-    - Confidence score (0-100)
-    - Execution advice
+    Get an enhanced trading signal with smart decision logic.
     """
     # 1. Verify API key
     if not verify_api_key(api_key):
@@ -112,18 +153,11 @@ async def get_signal(
     # 4. Calculate spread
     spread = ((ask - bid) / bid) * 100 if bid > 0 else 0
     
-    # 5. ENHANCED: Generate recommendation with confidence
-    if spread > 0.5:
-        recommendation = "BUY"
-        confidence = min(100, abs(spread) * 20)
-    elif spread < -0.5:
-        recommendation = "SELL"
-        confidence = min(100, abs(spread) * 20)
-    else:
-        recommendation = "NEUTRAL"
-        confidence = max(0, 100 - (abs(spread) * 50))
+    # 5. Apply smart decision logic
+    decision_maker = TradingDecision(ticker, spread, symbol)
+    should_act, reason, confidence, recommendation = decision_maker.evaluate()
     
-    # 6. ENHANCED: Execution advice
+    # 6. Generate execution advice
     if recommendation == "BUY":
         target = price * 1.005
         stop = price * 0.995
@@ -135,7 +169,7 @@ async def get_signal(
         advice = f"Sell at {price:.4f}, target {target:.4f}, stop {stop:.4f}"
         risk_reward = f"1:{((price - target) / (stop - price)):.1f}"
     else:
-        advice = "Wait for clearer signal. Spread too tight."
+        advice = reason or "Wait for clearer signal"
         risk_reward = "N/A"
     
     # 7. Create response
@@ -150,6 +184,8 @@ async def get_signal(
         "confidence": round(confidence, 1),
         "advice": advice,
         "risk_reward": risk_reward,
+        "should_act": should_act,
+        "reason": reason,
         "timestamp": datetime.now().isoformat()
     }
     
@@ -209,12 +245,8 @@ async def get_multi_signal(
         ask = ticker.get("ask", price)
         spread = ((ask - bid) / bid) * 100 if bid > 0 else 0
         
-        if spread > 0.5:
-            rec = "BUY"
-        elif spread < -0.5:
-            rec = "SELL"
-        else:
-            rec = "NEUTRAL"
+        decision_maker = TradingDecision(ticker, spread, symbol)
+        should_act, reason, confidence, rec = decision_maker.evaluate()
         
         results[symbol] = {
             "price": price,
@@ -222,7 +254,9 @@ async def get_multi_signal(
             "ask": ask,
             "spread": round(spread, 2),
             "recommendation": rec,
-            "confidence": round(min(100, abs(spread) * 20), 1)
+            "confidence": round(confidence, 1),
+            "should_act": should_act,
+            "reason": reason
         }
     
     return {
@@ -308,7 +342,7 @@ async def health_check() -> Dict[str, Any]:
 
 
 # ============================================
-# WEBHOOK FOR OPENSTALL (v2.0)
+# WEBHOOK FOR OPENSTALL
 # ============================================
 
 @app.post("/agent/webhook")
@@ -336,7 +370,7 @@ async def webhook_handler(request: Request) -> Dict[str, Any]:
         if not verify_api_key(api_key):
             return {"error": "Invalid API key"}
         
-        # Get signal
+        # Get signal with smart decision
         bybit = BybitClient()
         ticker = await bybit.get_ticker(symbol)
         await bybit.close()
@@ -346,12 +380,8 @@ async def webhook_handler(request: Request) -> Dict[str, Any]:
         ask = ticker.get("ask", price)
         spread = ((ask - bid) / bid) * 100 if bid > 0 else 0
         
-        if spread > 0.5:
-            recommendation = "BUY"
-        elif spread < -0.5:
-            recommendation = "SELL"
-        else:
-            recommendation = "NEUTRAL"
+        decision_maker = TradingDecision(ticker, spread, symbol)
+        should_act, reason, confidence, rec = decision_maker.evaluate()
         
         # Return response to OpenStall
         return {
@@ -360,7 +390,10 @@ async def webhook_handler(request: Request) -> Dict[str, Any]:
             "output": {
                 "symbol": symbol,
                 "price": price,
-                "recommendation": recommendation,
+                "recommendation": rec,
+                "confidence": round(confidence, 1),
+                "should_act": should_act,
+                "reason": reason,
                 "spread": round(spread, 2),
                 "timestamp": datetime.now().isoformat()
             }
