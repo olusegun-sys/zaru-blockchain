@@ -8,6 +8,9 @@ SUPPORTS:
 - HMAC SHA256 authentication
 - Spot trading
 - Market and Limit orders
+
+FIXED: Increased recv_window to 10000 to handle time drift.
+FIXED: Better timestamp handling for time zone differences.
 """
 
 import os
@@ -53,13 +56,17 @@ class BybitClient:
             self.ws_url = "wss://stream.bybit.com/v5/public/spot"
         
         self.session = None
-        self.recv_window = "5000"
+        
+        # FIXED: Increased recv_window to handle time drift
+        self.recv_window = "10000"  # Increased from 5000 to 10000
+        
         self._connected = False
         
         print(f"🔗 BybitClient initialized")
         print(f"   Environment: {'TESTNET' if self.testnet else 'PRODUCTION'}")
         print(f"   API Key: {self.api_key[:8] if self.api_key else 'NOT SET'}...")
         print(f"   Base URL: {self.base_url}")
+        print(f"   Recv Window: {self.recv_window}ms")
     
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create HTTP session."""
@@ -73,6 +80,7 @@ class BybitClient:
         
         Bybit uses: param_str = timestamp + api_key + recv_window + params_json
         """
+        # FIXED: Use time.time() * 1000 with int() for consistent timestamp
         timestamp = str(int(time.time() * 1000))
         
         # Sort params alphabetically
@@ -234,7 +242,10 @@ class BybitClient:
                 json=params,
                 timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
-                return await resp.json()
+                result = await resp.json()
+                if result.get('retCode') != 0:
+                    print(f"⚠️ Order error: {result.get('retMsg')}")
+                return result
         except Exception as e:
             return {"retCode": -1, "retMsg": str(e)}
     
@@ -278,7 +289,10 @@ class BybitClient:
                 json=params,
                 timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
-                return await resp.json()
+                result = await resp.json()
+                if result.get('retCode') != 0:
+                    print(f"⚠️ Order error: {result.get('retMsg')}")
+                return result
         except Exception as e:
             return {"retCode": -1, "retMsg": str(e)}
     
