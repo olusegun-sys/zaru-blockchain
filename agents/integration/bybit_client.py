@@ -9,8 +9,8 @@ SUPPORTS:
 - Spot trading
 - Market and Limit orders
 
-FIXED: Increased recv_window to 10000 to handle time drift.
-FIXED: Better timestamp handling for time zone differences.
+FIXED: Server time sync to eliminate timestamp errors.
+FIXED: recv_window increased to 10000ms.
 """
 
 import os
@@ -58,9 +58,11 @@ class BybitClient:
         self.session = None
         
         # FIXED: Increased recv_window to handle time drift
-        self.recv_window = "10000"  # Increased from 5000 to 10000
+        self.recv_window = "10000"  # 10 seconds tolerance
         
         self._connected = False
+        self._server_time_offset = 0  # FIXED: Store time offset for correction
+        self._last_time_sync = 0
         
         print(f"🔗 BybitClient initialized")
         print(f"   Environment: {'TESTNET' if self.testnet else 'PRODUCTION'}")
@@ -74,14 +76,57 @@ class BybitClient:
             self.session = aiohttp.ClientSession()
         return self.session
     
+    # ============================================
+    # FIXED: SERVER TIME SYNC
+    # ============================================
+    
+    async def _sync_server_time(self) -> None:
+        """
+        Sync with Bybit server time to eliminate timestamp errors.
+        
+        FIXED: Calculates offset between local and server time.
+        """
+        try:
+            session = await self._get_session()
+            local_time = int(time.time() * 1000)
+            
+            async with session.get(
+                f"{self.base_url}/v5/market/time",
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("retCode") == 0:
+                        server_time = int(data["result"]["timeSecond"]) * 1000
+                        self._server_time_offset = server_time - local_time
+                        self._last_time_sync = time.time()
+                        print(f"🕐 Server time synced: offset {self._server_time_offset}ms")
+                        return
+        except Exception as e:
+            print(f"⚠️ Failed to sync server time: {e}")
+        
+        # Fallback: use local time
+        self._server_time_offset = 0
+    
+    def _get_timestamp(self) -> str:
+        """
+        Get timestamp for API requests.
+        
+        FIXED: Uses server time sync if available.
+        """
+        local_time = int(time.time() * 1000)
+        if self._server_time_offset != 0:
+            return str(local_time + self._server_time_offset)
+        return str(local_time)
+    
     def _generate_signature(self, params: Dict[str, Any]) -> tuple:
         """
         Generate HMAC SHA256 signature for Bybit API.
         
         Bybit uses: param_str = timestamp + api_key + recv_window + params_json
         """
-        # FIXED: Use time.time() * 1000 with int() for consistent timestamp
-        timestamp = str(int(time.time() * 1000))
+        # FIXED: Use synced timestamp
+        timestamp = self._get_timestamp()
         
         # Sort params alphabetically
         sorted_params = sorted(params.items())
@@ -135,6 +180,10 @@ class BybitClient:
         
         try:
             session = await self._get_session()
+            
+            # FIXED: Sync server time before trading
+            if time.time() - self._last_time_sync > 300:  # Re-sync every 5 minutes
+                await self._sync_server_time()
             
             async with session.get(
                 f"{self.base_url}/v5/market/tickers",
@@ -221,6 +270,9 @@ class BybitClient:
         Returns:
             Order response from Bybit
         """
+        # FIXED: Sync server time before placing order
+        await self._sync_server_time()
+        
         params = {
             "category": "spot",
             "symbol": symbol,
@@ -245,6 +297,8 @@ class BybitClient:
                 result = await resp.json()
                 if result.get('retCode') != 0:
                     print(f"⚠️ Order error: {result.get('retMsg')}")
+                    print(f"   📋 Timestamp: {self._get_timestamp()}")
+                    print(f"   📋 Recv Window: {self.recv_window}ms")
                 return result
         except Exception as e:
             return {"retCode": -1, "retMsg": str(e)}
@@ -267,6 +321,9 @@ class BybitClient:
             price: Limit price
             test: If True, validate only (no real order)
         """
+        # FIXED: Sync server time before placing order
+        await self._sync_server_time()
+        
         params = {
             "category": "spot",
             "symbol": symbol,
@@ -336,6 +393,9 @@ class BybitClient:
     
     async def get_balance(self, asset: str = "USDT") -> float:
         """Get balance for a specific asset."""
+        # FIXED: Sync server time before getting balance
+        await self._sync_server_time()
+        
         params = {"accountType": "UNIFIED", "coin": asset}
         
         try:
@@ -360,6 +420,9 @@ class BybitClient:
     
     async def get_positions(self) -> List[Dict]:
         """Get current positions."""
+        # FIXED: Sync server time before getting positions
+        await self._sync_server_time()
+        
         params = {"category": "spot"}
         
         try:
@@ -396,6 +459,9 @@ class BybitClient:
             return False
         
         try:
+            # FIXED: Sync server time before testing
+            await self._sync_server_time()
+            
             price = await self.get_ticker("MATICUSDT")
             if price.get("price", 0) > 0:
                 self._connected = True
