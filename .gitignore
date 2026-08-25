@@ -168,4 +168,4 @@ temp/
 *.db-wal
 *.db-shm
 data/
-rocksdb_data/
+rocksdb_data/.env 
